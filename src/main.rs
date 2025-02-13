@@ -25,7 +25,7 @@ verus! {
 
     type Library = Map<Book, Card>;
 
-    // If we talk in terms of a state machine, the Library if our state.
+    // If we talk in terms of a state machine, the Library is our state.
 
     // We will now specify the initial state of our state machine.
     spec fn init(library: Library) -> bool {
@@ -61,6 +61,23 @@ verus! {
         ||| exists |book: Book, patron_name: String| check_in(library, book, patron_name, library_prime)
         ||| exists |book: Book, patron_name: String| check_out(library, book, patron_name, library_prime)
     }
+
+    // We now want to prove that our system ensures certain safety rules.
+    // Our safety rule is that no two books borowed from the library should be borrowed by the same patron.
+
+    // First, we need to define the safety specifications. For now, we just start with a dummy specification that is always true
+    spec fn safety(library: Library) -> bool {
+        true
+    }
+
+    // Now, we define the framework for the proof that our proves our systems ensures the safety specifications
+    proof fn ensures_safety()
+        ensures
+        forall |library: Library| init(library) ==> safety(library),
+        forall |library: Library, library_prime: Library| safety(library) && next(library, library_prime) ==> safety(library_prime)
+    {}
+
+    // The above proof will always work, because safety is always true, and therefore, the proof is always true.
 
     fn main() { }
 }
