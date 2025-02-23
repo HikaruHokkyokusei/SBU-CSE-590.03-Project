@@ -35,9 +35,20 @@ verus! {
         &&& library_prime == library.insert(book, Card::Shelf)
     }
 
+    enum Transition {
+        CheckIn { book: Book, patron_name: String },
+        CheckOut { book: Book, patron_name: String },
+    }
+
+    spec fn is_valid_transition(library: Library, transition: Transition, library_prime: Library) -> bool {
+        match transition {
+            Transition::CheckIn { book, patron_name } => check_in(library, book, patron_name, library_prime),
+            Transition::CheckOut { book, patron_name } => check_out(library, book, patron_name, library_prime)
+        }
+    }
+
     spec fn next(library: Library, library_prime: Library) -> bool {
-        ||| exists |book: Book, patron_name: String| check_in(library, book, patron_name, library_prime)
-        ||| exists |book: Book, patron_name: String| check_out(library, book, patron_name, library_prime)
+        exists |transition: Transition| is_valid_transition(library, transition, library_prime)
     }
 
     spec fn has_at_most_one_book(library: Library, patron_name: String) -> bool {
@@ -62,19 +73,23 @@ verus! {
             assume(safety(library));
             assume(next(library, library_prime));
 
-            assert forall |patron2: String| has_at_most_one_book(library_prime, patron2) by {
-                if (exists |book: Book, patron1: String| check_out(library, book, patron1, library_prime)) {
-                    let (book, patron1) = choose |book: Book, patron1: String| check_out(library, book, patron1, library_prime);
-                    if (patron2 == patron1) {
-                        assert(has_at_most_one_book(library_prime, patron2));
-                    } else {
-                        assert(has_at_most_one_book(library, patron2));
-                        assert(has_at_most_one_book(library_prime, patron1));
-                    }
-                } else {
-                    assert(has_at_most_one_book(library, patron2));
-                }
-            }
+            assert forall |patron_name: String| has_at_most_one_book(library_prime, patron_name) by {
+                // if (exists |transition: Transition| is_valid_transition(library, transition, library_prime)) {
+                //     let transition = choose |transition: Transition| is_valid_transition(library, transition, library_prime);
+                //     match transition {
+                //         Transition::CheckOut { book, patron_name } => {
+                //             assert(has_at_most_one_book(library, patron_name));
+                //         },
+                //         Transition::CheckIn { book, patron_name } => {
+                //             assert(has_at_most_one_book(library, patron_name));
+                //         }
+                //     };
+                // } else {
+                //     assert(has_at_most_one_book(library, patron_name));
+                // }
+
+                assert(has_at_most_one_book(library, patron_name));
+            };
         }
     }
 
