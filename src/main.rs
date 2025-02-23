@@ -38,5 +38,17 @@ verus! {
         exists |movement: Movement| is_valid_movement(u, v, movement)
     }
 
+    spec fn in_manhole(u: Variables) -> bool {
+        u.x * u.x + u.y * u.y <= 3
+    }
+
+    spec fn safety(u: Variables) -> bool {
+        !in_manhole(u)
+    }
+
+    spec fn inductive(u: Variables) -> bool {
+        u.x + u.y >= 5
+    }
+
     fn main() { }
 }
