@@ -1,6 +1,15 @@
 use vstd::prelude::*; verus! {
-    spec fn is_even(a: i64) -> bool {
-        a % 2 == 0
+    struct Constants {
+        z: i64
+    }
+
+    struct Variables {
+        x: i64,
+        y: i64
+    }
+
+    spec fn init(u: Variables) -> bool {
+        u.x == 0 && u.y == 5
     }
 
     fn main() {}
