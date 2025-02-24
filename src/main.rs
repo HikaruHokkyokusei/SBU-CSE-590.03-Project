@@ -39,7 +39,7 @@ verus! {
     }
 
     spec fn in_manhole(u: Variables) -> bool {
-        u.x * u.x + u.y * u.y <= 3
+        u.x * u.x + u.y * u.y <= 9
     }
 
     spec fn safety(u: Variables) -> bool {
@@ -48,6 +48,22 @@ verus! {
 
     spec fn inductive(u: Variables) -> bool {
         u.x + u.y >= 5
+    }
+
+    proof fn ensures_safety(u: Variables, v: Variables)
+        ensures
+        init(u) ==> inductive(u),
+        inductive(u) && next(u, v) ==> inductive(v),
+        inductive(u) ==> safety(u)
+    {
+        assert(inductive(u) ==> safety(u)) by (nonlinear_arith) {
+            assume(inductive(u));
+
+            assert(safety(u)) by {
+                assert(u.x + u.y >= 5);
+                assert(u.x * u.x + u.y * u.y > 9);
+            };
+        };
     }
 
     fn main() { }
