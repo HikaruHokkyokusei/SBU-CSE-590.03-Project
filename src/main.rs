@@ -1,7 +1,5 @@
-use vstd::prelude::*; verus! {
-    spec fn is_even(a: i64) -> bool {
-        a % 2 == 0
-    }
+use vstd::prelude::*;
 
-    fn main() {}
+verus! {
+    fn main() { }
 }
