@@ -61,4 +61,14 @@ verus! {
     pub(crate) open spec fn next(c: &Constants, u: &Variables, v: &Variables) -> bool {
         exists |transition: Transition| is_valid_transition(c, u, v, transition)
     }
+
+    pub(crate) open spec fn safety(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& forall |i: int, j: int| #![auto]
+            valid_index(&c.ids, i) &&
+            valid_index(&c.ids, j) &&
+            c.ids[i] == u.max_received_ids[i] &&
+            c.ids[j] == u.max_received_ids[j] ==>
+            i == j
+    }
 }
