@@ -33,4 +33,32 @@ verus! {
         &&& u.well_formed(c)
         &&& forall |idx: int| #![auto] valid_index(&u.max_received_ids, idx) ==> (c.ids[idx] >= 0) && (u.max_received_ids[idx] == -1)
     }
+
+    pub(crate) enum Transition {
+        MessageExchange { src: int }
+    }
+
+    pub(crate) open spec fn next_index(arr: &Vec<i64>, src: int) -> int {
+        if src + 1 == arr.len() { 0 } else { src + 1 }
+    }
+
+    pub(crate) open spec fn message_exchange(c: &Constants, u: &Variables, v: &Variables, src: int) -> bool {
+        &&& valid_index(&c.ids, src)
+        &&& {
+            let dest = next_index(&c.ids, src);
+            let msg = if c.ids[src] > u.max_received_ids[src] { c.ids[src] } else { u.max_received_ids[src] };
+            let new_val = if u.max_received_ids[dest] > msg { u.max_received_ids[dest] } else { msg };
+            v.max_received_ids@ == u.max_received_ids@.update(dest, new_val)
+        }
+    }
+
+    pub(crate) open spec fn is_valid_transition(c: &Constants, u: &Variables, v: &Variables, transition: Transition) -> bool {
+        match transition {
+            Transition::MessageExchange { src } => message_exchange(c, u, v, src)
+        }
+    }
+
+    pub(crate) open spec fn next(c: &Constants, u: &Variables, v: &Variables) -> bool {
+        exists |transition: Transition| is_valid_transition(c, u, v, transition)
+    }
 }
