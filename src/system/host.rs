@@ -71,4 +71,23 @@ verus! {
             c.ids[j] == u.max_received_ids[j] ==>
             i == j
     }
+
+    pub(crate) open spec fn is_index_in_between(start: int, mid: int, end: int) -> bool {
+        if end > start {
+            start <= mid <= end
+        } else {
+            (start <= mid) || (mid <= end)
+        }
+    }
+
+    pub(crate) open spec fn inductive(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& forall |i: int, mid: int, j: int| #![auto]
+            valid_index(&c.ids, i) &&
+            valid_index(&c.ids, mid) &&
+            valid_index(&c.ids, j) &&
+            is_index_in_between(i, mid, j) &&
+            u.max_received_ids[j] == c.ids[i] ==>
+            u.max_received_ids[mid] >= c.ids[i]
+    }
 }
