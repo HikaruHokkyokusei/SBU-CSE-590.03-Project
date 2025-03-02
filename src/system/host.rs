@@ -116,7 +116,19 @@ verus! {
         };
 
         assert(inductive(c, u) && next(c, u, v) ==> inductive(c, v)) by {
-            assume(false);
+            assume(inductive(c, u));
+            assume(next(c, u, v));
+
+            assert forall |i: int, mid: int, j: int|
+                valid_index(&c.ids, i) &&
+                valid_index(&c.ids, mid) &&
+                valid_index(&c.ids, j) &&
+                is_index_in_between(i, mid, j) &&
+                v.max_received_ids[j] == c.ids[i] implies
+                v.max_received_ids[mid] >= c.ids[i]
+            by {
+                assume(u.max_received_ids[j] == c.ids[i]);
+            }
         };
 
         assert(inductive(c, u) ==> safety(c, u)) by {
