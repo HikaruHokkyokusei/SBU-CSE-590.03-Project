@@ -132,7 +132,33 @@ verus! {
         };
 
         assert(inductive(c, u) ==> safety(c, u)) by {
-            assume(false);
+            assume(inductive(c, u));
+
+            assert forall |i: int, j: int| #![auto]
+                valid_index(&c.ids, i) &&
+                valid_index(&c.ids, j) &&
+                c.ids[i] == u.max_received_ids[i] &&
+                c.ids[j] == u.max_received_ids[j] implies
+                i == j
+            by {
+                // assume(valid_index(&c.ids, i));
+                // assume(valid_index(&c.ids, j));
+                // assert(valid_index(&u.max_received_ids, i));
+                // assert(valid_index(&u.max_received_ids, j));
+
+                // assume(c.ids[i] == u.max_received_ids[i]);
+                // assume(c.ids[j] == u.max_received_ids[j]);
+
+                // let mid = choose |mid: int| valid_index(&c.ids, mid);
+
+                // if (is_index_in_between(i, mid, i)) {
+                //     assert(is_index_in_between(i, j, i));
+                //     assume(c.ids[j] < c.ids[i]);
+                // }
+
+                assert(is_index_in_between(i, j, i));
+                assume(c.ids[j] < c.ids[i]);
+            };
         }
     }
 }
