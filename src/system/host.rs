@@ -90,4 +90,11 @@ verus! {
             u.max_received_ids[j] == c.ids[i] ==>
             u.max_received_ids[mid] >= c.ids[i]
     }
+
+    pub(crate) proof fn ensures_safety(c: &Constants, u: &Variables, v: &Variables)
+    ensures
+        init(c, u) ==> inductive(c, u),
+        inductive(c, u) && next(c, u, v) ==> inductive(c, v),
+        inductive(c, u) ==> safety(c, u)
+    {}
 }
