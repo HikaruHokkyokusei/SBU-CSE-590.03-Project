@@ -74,9 +74,9 @@ verus! {
 
     pub(crate) open spec fn is_index_in_between(start: int, mid: int, end: int) -> bool {
         if end > start {
-            start <= mid <= end
+            start <= mid < end
         } else {
-            (start <= mid) || (mid <= end)
+            (start <= mid) || (mid < end)
         }
     }
 
@@ -88,7 +88,7 @@ verus! {
             valid_index(&c.ids, j) &&
             is_index_in_between(i, mid, j) &&
             u.max_received_ids[j] == c.ids[i] ==>
-            u.max_received_ids[mid] >= c.ids[i]
+            c.ids[mid] <= c.ids[i]
     }
 
     pub(crate) proof fn ensures_safety(c: &Constants, u: &Variables, v: &Variables)
@@ -100,18 +100,13 @@ verus! {
         assert(init(c, u) ==> inductive(c, u)) by {
             assume(init(c, u));
 
-            assert forall |i: int, mid: int, j: int|
+            assert forall |i: int, j: int| #![auto]
                 valid_index(&c.ids, i) &&
-                valid_index(&c.ids, j) &&
-                valid_index(&c.ids, mid) &&
-                is_index_in_between(i, mid, j) &&
-                u.max_received_ids[j] == c.ids[i] implies
-                u.max_received_ids[mid] >= c.ids[i]
+                valid_index(&c.ids, j) implies
+                u.max_received_ids[j] != c.ids[i]
             by {
-                assert(valid_index(&u.max_received_ids, mid)); // ==> assert(u.max_received_ids[mid] == -1);
+                assert(valid_index(&u.max_received_ids, i));
                 assert(valid_index(&u.max_received_ids, j));
-                // ==> assert(u.max_received_ids[j] == -1);
-                // ==> assert(u.max_received_ids[mid] >= c.ids[i]);
             };
         };
 
@@ -125,7 +120,7 @@ verus! {
                 valid_index(&c.ids, j) &&
                 is_index_in_between(i, mid, j) &&
                 v.max_received_ids[j] == c.ids[i] implies
-                v.max_received_ids[mid] >= c.ids[i]
+                c.ids[mid] <= c.ids[i]
             by {
                 assume(u.max_received_ids[j] == c.ids[i]);
             }
@@ -141,23 +136,8 @@ verus! {
                 c.ids[j] == u.max_received_ids[j] implies
                 i == j
             by {
-                // assume(valid_index(&c.ids, i));
-                // assume(valid_index(&c.ids, j));
-                // assert(valid_index(&u.max_received_ids, i));
-                // assert(valid_index(&u.max_received_ids, j));
-
-                // assume(c.ids[i] == u.max_received_ids[i]);
-                // assume(c.ids[j] == u.max_received_ids[j]);
-
-                // let mid = choose |mid: int| valid_index(&c.ids, mid);
-
-                // if (is_index_in_between(i, mid, i)) {
-                //     assert(is_index_in_between(i, j, i));
-                //     assume(c.ids[j] < c.ids[i]);
-                // }
-
                 assert(is_index_in_between(i, j, i));
-                assume(c.ids[j] < c.ids[i]);
+                assert(is_index_in_between(j, i, j));
             };
         }
     }
