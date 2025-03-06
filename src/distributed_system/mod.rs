@@ -5,6 +5,17 @@ pub(crate) mod network;
 use vstd::prelude::*;
 
 verus! {
+    pub(crate) enum Decision {
+        Commit,
+        Abort
+    }
+
+    pub(crate) enum Message {
+        VoteRequest,
+        Vote{ sender: int, vote: host::Vote },
+        Decision{ decision: Decision }
+    }
+
     pub(crate) struct Constants {
         pub(crate) num_hosts: int,
         pub(crate) coordinator: coordinator::Constants,
