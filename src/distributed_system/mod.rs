@@ -7,13 +7,13 @@ use vstd::prelude::*;
 verus! {
     pub(crate) enum Decision {
         Commit,
-        Abort
+        Abort,
     }
 
     pub(crate) enum Message {
         VoteRequest,
-        Vote{ sender: int, vote: host::Vote },
-        Decision{ decision: Decision }
+        Vote { sender: int, vote: host::Vote },
+        Decision { decision: Decision },
     }
 
     pub(crate) struct Constants {
