@@ -1,4 +1,4 @@
-use super::{host::Vote, Decision};
+use super::{host::Vote, Decision, Message, MessageOps};
 use vstd::prelude::*;
 
 verus! {
@@ -28,5 +28,56 @@ verus! {
         &&& u.well_formed(c, num_hosts)
         &&& u.decision.is_none()
         &&& forall |i: int| 0 <= i < u.votes.len() ==> u.votes[i].is_none()
+    }
+
+    pub(crate) open spec fn all_votes_collected(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c, c.num_hosts)
+        &&& forall |i: int| 0 <= i < u.votes.len() ==> u.votes[i].is_some()
+    }
+
+    pub(crate) open spec fn send_vote_request(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+        &&& u.well_formed(c, c.num_hosts)
+        &&& message_ops.recv.is_none()
+        &&& message_ops.send == Some(Message::VoteRequest)
+        &&& v == u
+        &&& v.well_formed(c, c.num_hosts)
+    }
+
+    pub(crate) open spec fn learn_vote(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+        &&& u.well_formed(c, c.num_hosts)
+        &&& if let Some(Message::Vote { sender, vote }) = message_ops.recv {
+            &&& sender < c.num_hosts
+            &&& v.votes[sender] == Some(vote)
+            &&& forall |i: int| 0 <= i < v.votes.len() && i != sender ==> v.votes[i] == u.votes[i]
+            &&& v.decision == u.decision
+        } else {
+            false
+        }
+        &&& message_ops.send.is_none()
+        &&& v.well_formed(c, c.num_hosts)
+    }
+
+    pub(crate) open spec fn decide(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+        &&& u.well_formed(c, c.num_hosts)
+        &&& v.well_formed(c, c.num_hosts)
+        &&& all_votes_collected(c, u)
+        &&& message_ops.recv.is_none()
+        &&& {
+            let decision = if (forall |i: int| 0 <= i < u.votes.len() ==> u.votes[i] == Some(Vote::Yes)) {
+                Decision::Commit
+            } else {
+                Decision::Abort
+            };
+
+            &&& v.votes == u.votes
+            &&& v.decision == Some(decision)
+            &&& message_ops.send == Some(Message::Decision { decision })
+        }
+    }
+
+    pub(crate) open spec fn step(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+        ||| send_vote_request(c, u, v, message_ops)
+        ||| learn_vote(c, u, v, message_ops)
+        ||| decide(c, u, v, message_ops)
     }
 }
