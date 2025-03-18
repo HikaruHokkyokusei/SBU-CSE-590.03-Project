@@ -50,7 +50,7 @@ verus! {
     }
 
     pub(crate) open spec fn step(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
-        ||| vote(c, u, v, message_ops) 
+        ||| vote(c, u, v, message_ops)
         ||| learn_decision(c, u, v, message_ops)
     }
 }

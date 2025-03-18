@@ -46,7 +46,7 @@ verus! {
             &&& c.well_formed()
             &&& self.hosts.len() == c.hosts.len()
             &&& self.coordinator.well_formed(&c.coordinator, c.num_hosts)
-            &&& forall |idx: int| 0 <= idx < self.hosts.len() ==> self.hosts[idx].well_formed(&c.hosts[idx], idx)
+            &&& forall |idx: int| #![auto] 0 <= idx < self.hosts.len() ==> self.hosts[idx].well_formed(&c.hosts[idx], idx)
             &&& self.network.well_formed(&c.network)
         }
     }
@@ -54,7 +54,7 @@ verus! {
     pub(crate) open spec fn init(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c)
         &&& coordinator::init(&c.coordinator, &u.coordinator, c.num_hosts)
-        &&& forall |idx: int| 0 <= idx < u.hosts.len() ==> host::init(&c.hosts[idx], &u.hosts[idx], idx)
+        &&& forall |idx: int| #![auto] 0 <= idx < u.hosts.len() ==> host::init(&c.hosts[idx], &u.hosts[idx], idx)
         &&& network::init(&c.network, &u.network)
     }
 
@@ -88,7 +88,7 @@ verus! {
         }
     }
 
-    pub(crate) open spec fn next(c: &Constants, u: &Variables, v: &Variables, host_id: int, message_ops: MessageOps) -> bool {
+    pub(crate) open spec fn next(c: &Constants, u: &Variables, v: &Variables) -> bool {
         exists |transition: Transition| is_valid_transition(c, u, v, transition)
     }
 }
