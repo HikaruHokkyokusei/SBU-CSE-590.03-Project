@@ -1,4 +1,4 @@
-use super::{host::Vote, Decision, Message, MessageOps};
+use super::{host, Decision, Message, MessageOps};
 use vstd::prelude::*;
 
 verus! {
@@ -8,7 +8,7 @@ verus! {
 
     pub(crate) struct Variables {
         pub(crate) decision: Option<Decision>,
-        pub(crate) votes: Seq<Option<Vote>>,
+        pub(crate) votes: Seq<Option<host::Vote>>,
     }
 
     impl Constants {
@@ -63,7 +63,7 @@ verus! {
         &&& all_votes_collected(c, u)
         &&& message_ops.recv.is_none()
         &&& {
-            let decision = if (forall |i: int| 0 <= i < u.votes.len() ==> u.votes[i] == Some(Vote::Yes)) {
+            let decision = if (forall |i: int| 0 <= i < u.votes.len() ==> u.votes[i] == Some(host::Vote::Yes)) {
                 Decision::Commit
             } else {
                 Decision::Abort
