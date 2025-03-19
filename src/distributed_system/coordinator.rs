@@ -2,40 +2,40 @@ use super::{host, Decision, Message, MessageOps};
 use vstd::prelude::*;
 
 verus! {
-    pub(crate) struct Constants {
-        pub(crate) num_hosts: int,
+    pub struct Constants {
+        pub num_hosts: int,
     }
 
-    pub(crate) struct Variables {
-        pub(crate) decision: Option<Decision>,
-        pub(crate) votes: Seq<Option<host::Vote>>,
+    pub struct Variables {
+        pub decision: Option<Decision>,
+        pub votes: Seq<Option<host::Vote>>,
     }
 
     impl Constants {
-        pub(crate) open spec fn well_formed(&self, num_hosts: int) -> bool {
+        pub open spec fn well_formed(&self, num_hosts: int) -> bool {
             self.num_hosts == num_hosts
         }
     }
 
     impl Variables {
-        pub(crate) open spec fn well_formed(&self, c: &Constants, num_hosts: int) -> bool {
+        pub open spec fn well_formed(&self, c: &Constants, num_hosts: int) -> bool {
             &&& c.well_formed(num_hosts)
             &&& self.votes.len() == num_hosts
         }
     }
 
-    pub(crate) open spec fn init(c: &Constants, u: &Variables, num_hosts: int) -> bool {
+    pub open spec fn init(c: &Constants, u: &Variables, num_hosts: int) -> bool {
         &&& u.well_formed(c, num_hosts)
         &&& u.decision.is_none()
         &&& forall |i: int| 0 <= i < u.votes.len() ==> u.votes[i].is_none()
     }
 
-    pub(crate) open spec fn all_votes_collected(c: &Constants, u: &Variables) -> bool {
+    pub open spec fn all_votes_collected(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c, c.num_hosts)
         &&& forall |i: int| 0 <= i < u.votes.len() ==> u.votes[i].is_some()
     }
 
-    pub(crate) open spec fn send_vote_request(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+    pub open spec fn send_vote_request(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
         &&& u.well_formed(c, c.num_hosts)
         &&& message_ops.recv.is_none()
         &&& message_ops.send == Some(Message::VoteRequest)
@@ -43,7 +43,7 @@ verus! {
         &&& v.well_formed(c, c.num_hosts)
     }
 
-    pub(crate) open spec fn learn_vote(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+    pub open spec fn learn_vote(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
         &&& u.well_formed(c, c.num_hosts)
         &&& if let Some(Message::Vote { sender, vote }) = message_ops.recv {
             &&& sender < c.num_hosts
@@ -57,7 +57,7 @@ verus! {
         &&& v.well_formed(c, c.num_hosts)
     }
 
-    pub(crate) open spec fn decide(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+    pub open spec fn decide(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
         &&& u.well_formed(c, c.num_hosts)
         &&& v.well_formed(c, c.num_hosts)
         &&& all_votes_collected(c, u)
@@ -75,7 +75,7 @@ verus! {
         }
     }
 
-    pub(crate) open spec fn step(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
+    pub open spec fn step(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
         ||| send_vote_request(c, u, v, message_ops)
         ||| learn_vote(c, u, v, message_ops)
         ||| decide(c, u, v, message_ops)
