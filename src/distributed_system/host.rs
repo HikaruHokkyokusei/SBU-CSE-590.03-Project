@@ -37,7 +37,7 @@ verus! {
     pub open spec fn vote(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
         &&& u.well_formed(c, c.id)
         &&& message_ops.recv == Some(Message::VoteRequest)
-        &&& v.decision == if (c.vote == Vote::No) { Some(Decision::Abort) } else { u.decision }
+        &&& v.decision == u.decision
         &&& message_ops.send == Some(Message::Vote { sender: c.id, vote: c.vote })
         &&& v.well_formed(c, c.id)
     }
