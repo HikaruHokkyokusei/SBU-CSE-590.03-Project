@@ -66,12 +66,14 @@ verus! {
     pub open spec fn coordinator_step(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
         &&& u.well_formed(c)
         &&& coordinator::step(&c.coordinator, &u.coordinator, &v.coordinator, message_ops)
+        &&& v.hosts == u.hosts
         &&& network::step(&c.network, &u.network, &v.network, message_ops)
         &&& v.well_formed(c)
     }
 
     pub open spec fn host_step(c: &Constants, u: &Variables, v: &Variables, host_id: int, message_ops: MessageOps) -> bool {
         &&& u.well_formed(c)
+        &&& v.coordinator == u.coordinator
         &&& {
             &&& 0 <= host_id < u.hosts.len()
             &&& host::step(&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id], message_ops)

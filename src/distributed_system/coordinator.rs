@@ -46,7 +46,7 @@ verus! {
     pub open spec fn learn_vote(c: &Constants, u: &Variables, v: &Variables, message_ops: MessageOps) -> bool {
         &&& u.well_formed(c, c.num_hosts)
         &&& if let Some(Message::Vote { sender, vote }) = message_ops.recv {
-            &&& sender < c.num_hosts
+            &&& 0 <= sender < c.num_hosts
             &&& v.votes[sender] == Some(vote)
             &&& forall |i: int| 0 <= i < v.votes.len() && i != sender ==> v.votes[i] == u.votes[i]
             &&& v.decision == u.decision
