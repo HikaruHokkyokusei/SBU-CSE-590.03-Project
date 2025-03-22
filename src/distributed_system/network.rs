@@ -31,6 +31,6 @@ verus! {
         // Only allow receipt of messages that have been sent
         &&& if let Some(message) = message_ops.recv { u.sent_messages.contains(message) } else { true }
         // Update sent messages with any new message
-        &&& if let Some(message) = message_ops.send { v.sent_messages == u.sent_messages.insert(message) } else { true }
+        &&& if let Some(message) = message_ops.send { v.sent_messages == u.sent_messages.insert(message) } else { v == u }
     }
 }
