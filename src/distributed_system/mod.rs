@@ -93,4 +93,13 @@ verus! {
     pub open spec fn next(c: &Constants, u: &Variables, v: &Variables) -> bool {
         exists |transition: Transition| is_valid_transition(c, u, v, transition)
     }
+
+    pub open spec fn safety(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& (u.coordinator.decision == Some(Decision::Commit)) ==> (forall |i: int| 0 <= i < u.coordinator.votes.len() ==> u.coordinator.votes[i] == Some(host::Vote::Yes))
+        &&& forall |i: int| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].decision.is_some() ==>
+                u.hosts[i].decision == u.coordinator.decision
+    }
 }
