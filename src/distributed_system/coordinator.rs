@@ -71,6 +71,7 @@ verus! {
 
             &&& v.votes == u.votes
             &&& v.decision == Some(decision)
+            &&& u.decision.is_some() ==> v.decision == u.decision
             &&& message_ops.send == Some(Message::Decision { decision })
         }
     }
