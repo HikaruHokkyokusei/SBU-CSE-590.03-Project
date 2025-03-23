@@ -102,4 +102,44 @@ verus! {
                 u.hosts[i].decision.is_some() ==>
                 u.hosts[i].decision == u.coordinator.decision
     }
+
+    pub open spec fn vote_message_agrees_with_vote(c: &Constants, u: &Variables) -> bool {
+        forall |message: Message| #![auto]
+            u.network.sent_messages.contains(message) ==>
+            if let Message::Vote { sender, vote } = message {
+                &&& 0 <= sender < c.hosts.len()
+                &&& vote == c.hosts[sender].vote
+            } else {
+                true
+            }
+    }
+
+    pub open spec fn decision_message_agrees_with_decision(c: &Constants, u: &Variables) -> bool {
+        forall |message: Message| #![auto]
+            u.network.sent_messages.contains(message) ==>
+            if let Message::Decision { decision } = message {
+                &&& u.coordinator.decision == Some(decision)
+            } else {
+                true
+            }
+    }
+
+    pub open spec fn vote_has_vote_message(c: &Constants, u: &Variables) -> bool {
+        forall |i: int| #![auto]
+            0 <= i < u.coordinator.votes.len() &&
+            u.coordinator.votes[i].is_some() ==>
+            u.network.sent_messages.contains(Message::Vote { sender: i, vote: u.coordinator.votes[i].unwrap() })
+    }
+
+    pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& vote_message_agrees_with_vote(c, u)
+        &&& decision_message_agrees_with_decision(c, u)
+        &&& vote_has_vote_message(c, u)
+        &&& (u.coordinator.decision == Some(Decision::Commit)) ==> (forall |i: int| 0 <= i < u.coordinator.votes.len() ==> u.coordinator.votes[i] == Some(host::Vote::Yes))
+        &&& forall |i: int| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].decision.is_some() ==>
+                u.hosts[i].decision == u.coordinator.decision
+    }
 }
