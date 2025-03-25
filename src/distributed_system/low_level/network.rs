@@ -1,4 +1,4 @@
-use super::Message;
+use super::{Message, NetworkOperation};
 use vstd::prelude::*;
 
 verus! {
@@ -25,5 +25,18 @@ verus! {
         &&& u.well_formed(c)
         &&& u.in_flight_messages.is_empty()
         &&& u.in_flight_messages.finite()
+    }
+
+    pub open spec fn step(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool {
+        &&& u.well_formed(c)
+        &&& v.well_formed(c)
+        &&& if let Some(message) = net_op.recv { u.in_flight_messages.contains(message) } else { true }
+        &&& {
+            let in_flight_messages = u.in_flight_messages
+            - if let Some(message) = net_op.recv { set![message] } else { set![] }
+            + if let Some(message) = net_op.send { set![message] } else { set![] };
+
+            *v =~= Variables { in_flight_messages }
+        }
     }
 }
