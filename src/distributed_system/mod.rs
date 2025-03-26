@@ -47,4 +47,20 @@ verus! {
             counter: conditional_host_counter_sum(lv.hosts) + get_counter_in_network_messages(lv.network.in_flight_messages)
         }
     }
+
+    pub proof fn all_hosts_zero_counter_sum_is_zero(hosts: Seq<low_level::host::Variables>)
+    requires
+        forall |i: int| #![auto] 0 <= i < hosts.len() ==> hosts[i].counter == 0
+    ensures
+        conditional_host_counter_sum(hosts) == 0
+    decreases
+        hosts.len()
+    {
+        if (hosts.len() != 0) {
+            let last = hosts.last();
+            let rest = hosts.drop_last();
+            all_hosts_zero_counter_sum_is_zero(rest);
+            assert(conditional_host_counter_sum(hosts) == 0);
+        }
+    }
 }
