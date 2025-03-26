@@ -71,4 +71,14 @@ verus! {
     pub open spec fn next(c: &Constants, u: &Variables, v: &Variables, event: Event) -> bool {
         exists |transition: Transition| is_valid_transition(c, u, v, transition, event)
     }
+
+    pub open spec fn safety(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& true
+    }
+
+    pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& true
+    }
 }
