@@ -63,4 +63,43 @@ verus! {
             assert(conditional_host_counter_sum(hosts) == 0);
         }
     }
+
+    pub proof fn no_host_holds_counter_sum_is_zero(hosts: Seq<low_level::host::Variables>)
+    requires
+        forall |i: int| #![auto] 0 <= i < hosts.len() ==> !hosts[i].holds_counter
+    ensures
+        conditional_host_counter_sum(hosts) == 0
+    decreases
+        hosts.len()
+    {
+        if (hosts.len() != 0) {
+            let last = hosts.last();
+            let rest = hosts.drop_last();
+            no_host_holds_counter_sum_is_zero(rest);
+            assert(conditional_host_counter_sum(hosts) == 0);
+        }
+    }
+
+    pub proof fn counter_sum_eq_counter_of_only_host_holding_counter(hosts: Seq<low_level::host::Variables>, host_id: int)
+    requires
+        0 <= host_id < hosts.len(),
+        hosts[host_id].holds_counter,
+        forall |i: int| #![auto] 0 <= i < hosts.len() && i != host_id ==> !hosts[i].holds_counter
+    ensures
+        conditional_host_counter_sum(hosts) == hosts[host_id].counter
+    decreases
+        hosts.len()
+    {
+        if (hosts.len() != 0) {
+            let last = hosts.last();
+            let rest = hosts.drop_last();
+            if (last == hosts[host_id]) {
+                no_host_holds_counter_sum_is_zero(rest);
+                assert(conditional_host_counter_sum(rest) == 0);
+            } else {
+                counter_sum_eq_counter_of_only_host_holding_counter(rest, host_id);
+                assert(conditional_host_counter_sum(hosts) == hosts[host_id].counter);
+            }
+        }
+    }
 }
