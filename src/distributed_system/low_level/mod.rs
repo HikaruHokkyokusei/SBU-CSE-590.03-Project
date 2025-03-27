@@ -79,6 +79,13 @@ verus! {
 
     pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c)
-        &&& true
+        &&& (exists |i: int| #![auto] 0 <= i < u.hosts.len() && u.hosts[i].holds_counter) ==> (u.network.in_flight_messages.is_empty())
+        &&& (forall |i: int| #![auto] 0 <= i < u.hosts.len() ==> !u.hosts[i].holds_counter) <==> (exists |m: Message| u.network.in_flight_messages =~= set![m])
+        &&& forall |i: int, j: int| #![auto]
+                0 <= i < u.hosts.len() &&
+                0 <= j < u.hosts.len() &&
+                u.hosts[i].holds_counter &&
+                u.hosts[j].holds_counter ==>
+                i == j
     }
 }
