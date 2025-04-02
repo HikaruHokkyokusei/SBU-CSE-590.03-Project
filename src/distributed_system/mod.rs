@@ -5,4 +5,9 @@ verus! {
     pub mod low_level;
 
     pub type Value = int;
+
+    pub enum Event {
+        Decide { value: Value },
+        NoOp,
+    }
 }
