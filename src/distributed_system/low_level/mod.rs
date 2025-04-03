@@ -87,4 +87,13 @@ verus! {
     pub open spec fn next(c: &Constants, u: &Variables, v: &Variables, event: Event) -> bool {
         exists |transition: Transition| is_valid_transition(c, u, v, transition, event)
     }
+
+    pub open spec fn safety(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& forall |i: int, j: int| #![auto]
+                0 <= i < j < u.hosts.len() &&
+                u.hosts[i].decide_value.is_some() &&
+                u.hosts[j].decide_value.is_some() ==>
+                u.hosts[i].decide_value == u.hosts[j].decide_value
+    }
 }
