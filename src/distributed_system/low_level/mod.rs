@@ -97,8 +97,28 @@ verus! {
                 u.hosts[i].decide_value == u.hosts[j].decide_value
     }
 
+    pub open spec fn decide_has_decide_message_in_network(c: &Constants, u: &Variables) -> bool {
+        forall |i: int| #![auto]
+            0 <= i < u.hosts.len() &&
+            u.hosts[i].decide_value.is_some() ==>
+            exists |ballot: host::Ballot| #![auto] u.network.in_flight_messages.contains(Message::Decide { ballot, value: u.hosts[i].decide_value.unwrap() })
+    }
+
+    pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
+        forall |msg1: Message, msg2: Message| #![auto]
+            u.network.in_flight_messages.contains(msg1) &&
+            u.network.in_flight_messages.contains(msg2) ==>
+            match (msg1, msg2) {
+                (Message::Decide { value: value1, .. }, Message::Decide { value: value2, .. }) => { value1 == value2 },
+                _ => { true }
+            }
+    }
+
     pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c)
+        &&& u.network.in_flight_messages.finite()
+        &&& decide_has_decide_message_in_network(c, u)
+        &&& all_decide_messages_hold_same_value(c, u)
         &&& true
     }
 }
