@@ -3,7 +3,8 @@ use distributed_system::{
     high_level::{init as high_init, next as high_next},
     low_level::{
         all_decide_messages_hold_same_value, decide_has_decide_message_in_network, inductive,
-        init as low_init, next as low_next, safety, Constants as LowConstants, Variables as LowVariables,
+        inductive_next_implies_decide_has_decide_message_in_network, init as low_init,
+        next as low_next, safety, Constants as LowConstants, Variables as LowVariables,
     },
     variables_abstraction, Event,
 };
@@ -32,7 +33,7 @@ verus! {
     {
         assert(inductive(c, v)) by {
             assert(v.network.in_flight_messages.finite());
-            assert(decide_has_decide_message_in_network(c, v)) by { assume(false); };
+            assert(decide_has_decide_message_in_network(c, v)) by { inductive_next_implies_decide_has_decide_message_in_network(c, u, v, event); };
             assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
         };
     }
