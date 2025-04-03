@@ -1,10 +1,11 @@
 use distributed_system::{
     constants_abstraction,
-    high_level::init as high_init,
+    high_level::{init as high_init, next as high_next},
     low_level::{
-        inductive, init as low_init, Constants as LowConstants, Variables as LowVariables,
+        all_decide_messages_hold_same_value, decide_has_decide_message_in_network, inductive,
+        init as low_init, next as low_next, Constants as LowConstants, Variables as LowVariables,
     },
-    variables_abstraction,
+    variables_abstraction, Event,
 };
 use vstd::prelude::*;
 
@@ -19,6 +20,22 @@ verus! {
         inductive(c, u),
         high_init(&constants_abstraction(c), &variables_abstraction(c, u)),
     { }
+
+    // Corresponds to `inductive(c, u) && next(c, u, v) ==> inductive(c, v)`
+    proof fn refinement_next(c: &LowConstants, u: &LowVariables, v: &LowVariables, event: Event)
+    requires
+        inductive(c, u),
+        low_next(c, u, v, event),
+    ensures
+        inductive(c, v),
+        high_next(&constants_abstraction(c), &variables_abstraction(c, u), &variables_abstraction(c, v), event),
+    {
+        assert(inductive(c, v)) by {
+            assert(v.network.in_flight_messages.finite());
+            assert(decide_has_decide_message_in_network(c, v)) by { assume(false); };
+            assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
+        };
+    }
 
     fn main() { }
 }
