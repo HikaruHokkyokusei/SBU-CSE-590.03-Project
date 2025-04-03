@@ -96,4 +96,9 @@ verus! {
                 u.hosts[j].decide_value.is_some() ==>
                 u.hosts[i].decide_value == u.hosts[j].decide_value
     }
+
+    pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
+        &&& u.well_formed(c)
+        &&& true
+    }
 }
