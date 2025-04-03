@@ -121,4 +121,35 @@ verus! {
         &&& all_decide_messages_hold_same_value(c, u)
         &&& true
     }
+
+    pub proof fn inductive_next_implies_decide_has_decide_message_in_network(c: &Constants, u: &Variables, v: &Variables, event: Event)
+    requires
+        inductive(c, u),
+        next(c, u, v, event),
+    ensures
+        decide_has_decide_message_in_network(c, v),
+    {
+        assert(u.network.in_flight_messages.finite());
+        assert(v.network.in_flight_messages.finite());
+
+        let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, v, transition, event);
+        let (host_c, host_u, host_v) = (&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id]);
+
+        assert forall |i: int| #![auto]
+            0 <= i < v.hosts.len() &&
+            v.hosts[i].decide_value.is_some() implies
+            exists |ballot: host::Ballot| #![auto] v.network.in_flight_messages.contains(Message::Decide { ballot, value: v.hosts[i].decide_value.unwrap() })
+        by {
+            match ((event, net_op.recv)) {
+                (Event::Decide { value }, Some(Message::Decide { ballot: recv_bal, value: recv_val }))
+                if (i == host_id) => {
+                    assert(host::decide(host_c, host_u, host_v, net_op, value));
+                    assert(recv_val == v.hosts[i].decide_value.unwrap());
+                    assert(v.network.in_flight_messages.contains(Message::Decide { ballot: recv_bal, value: recv_val }));
+                    assert(exists |ballot: host::Ballot| #![auto] v.network.in_flight_messages.contains(Message::Decide { ballot, value: v.hosts[i].decide_value.unwrap() }));
+                },
+                _ => { }
+            }
+        };
+    }
 }
