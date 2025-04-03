@@ -3,7 +3,7 @@ use distributed_system::{
     high_level::{init as high_init, next as high_next},
     low_level::{
         all_decide_messages_hold_same_value, decide_has_decide_message_in_network, inductive,
-        init as low_init, next as low_next, Constants as LowConstants, Variables as LowVariables,
+        init as low_init, next as low_next, safety, Constants as LowConstants, Variables as LowVariables,
     },
     variables_abstraction, Event,
 };
@@ -36,6 +36,14 @@ verus! {
             assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
         };
     }
+
+    // Corresponds to `inductive(c, u) ==> safety(c, u)`
+    proof fn inductive_is_safe(c: &LowConstants, u: &LowVariables)
+    requires
+        inductive(c, u)
+    ensures
+        safety(c, u)
+    {}
 
     fn main() { }
 }
