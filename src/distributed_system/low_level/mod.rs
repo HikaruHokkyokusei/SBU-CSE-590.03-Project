@@ -106,6 +106,14 @@ verus! {
             u.network.in_flight_messages.contains(Message::Accept { ballot: u.hosts[i].accept_ballot.unwrap(), value: u.hosts[i].accept_value.unwrap() })
     }
 
+    pub open spec fn accepted_has_accepted_message_in_network(c: &Constants, u: &Variables) -> bool {
+        forall |i: int, ballot: host::Ballot, sender: nat| #![auto]
+            0 <= i < u.hosts.len() &&
+            u.hosts[i].accepted.dom().contains(ballot) &&
+            u.hosts[i].accepted[ballot].contains(sender) ==>
+            u.network.in_flight_messages.contains(Message::Accepted { sender, ballot })
+    }
+
     pub open spec fn decide_has_decide_message_in_network(c: &Constants, u: &Variables) -> bool {
         forall |i: int| #![auto]
             0 <= i < u.hosts.len() &&
@@ -127,6 +135,7 @@ verus! {
         &&& u.well_formed(c)
         &&& u.network.in_flight_messages.finite()
         &&& accept_has_accept_message_in_network(c, u)
+        &&& accepted_has_accepted_message_in_network(c, u)
         &&& decide_has_decide_message_in_network(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
         &&& true
