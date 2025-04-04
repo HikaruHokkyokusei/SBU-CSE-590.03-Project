@@ -97,6 +97,21 @@ verus! {
                 u.hosts[i].decide_value == u.hosts[j].decide_value
     }
 
+    pub open spec fn all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c: &Constants, u: &Variables) -> bool {
+        &&& forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].promised.contains_key(ballot) ==>
+                ballot.pid == c.hosts[i].id
+        &&& forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].proposed_value.contains_key(ballot) ==>
+                ballot.pid == c.hosts[i].id
+        &&& forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].accepted.contains_key(ballot) ==>
+                ballot.pid == c.hosts[i].id
+    }
+
     pub open spec fn promised_has_promise_message_in_network(c: &Constants, u: &Variables) -> bool {
         forall |i: int, ballot: host::Ballot, sender: nat| #![auto]
             0 <= i < u.hosts.len() &&
@@ -142,6 +157,7 @@ verus! {
     pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c)
         &&& u.network.in_flight_messages.finite()
+        &&& all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, u)
         &&& promised_has_promise_message_in_network(c, u)
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
