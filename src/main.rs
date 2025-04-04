@@ -3,6 +3,7 @@ use distributed_system::{
     high_level::{init as high_init, next as high_next},
     low_level::{
         accept_has_accept_message_in_network, accepted_has_accepted_message_in_network,
+        all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id,
         all_decide_messages_hold_same_value, decide_has_decide_message_in_network, inductive,
         inductive_next_implies_decide_has_decide_message_in_network, init as low_init,
         next as low_next, promised_has_promise_message_in_network, safety,
@@ -35,6 +36,7 @@ verus! {
     {
         assert(inductive(c, v)) by {
             assert(v.network.in_flight_messages.finite());
+            assert(all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, v));
             assert(promised_has_promise_message_in_network(c, v));
             assert(accept_has_accept_message_in_network(c, v));
             assert(accepted_has_accepted_message_in_network(c, v));
