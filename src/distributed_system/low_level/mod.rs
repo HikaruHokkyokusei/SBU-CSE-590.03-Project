@@ -97,6 +97,14 @@ verus! {
                 u.hosts[i].decide_value == u.hosts[j].decide_value
     }
 
+    pub open spec fn promised_has_promise_message_in_network(c: &Constants, u: &Variables) -> bool {
+        forall |i: int, ballot: host::Ballot, sender: nat| #![auto]
+            0 <= i < u.hosts.len() &&
+            u.hosts[i].promised.dom().contains(ballot) &&
+            u.hosts[i].promised[ballot].dom().contains(sender) ==>
+            u.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: u.hosts[i].promised[ballot][sender] })
+    }
+
     pub open spec fn accept_has_accept_message_in_network(c: &Constants, u: &Variables) -> bool {
         forall |i: int| #![auto]
             0 <= i < u.hosts.len() &&
@@ -134,6 +142,7 @@ verus! {
     pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c)
         &&& u.network.in_flight_messages.finite()
+        &&& promised_has_promise_message_in_network(c, u)
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
         &&& decide_has_decide_message_in_network(c, u)

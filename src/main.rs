@@ -5,7 +5,8 @@ use distributed_system::{
         accept_has_accept_message_in_network, accepted_has_accepted_message_in_network,
         all_decide_messages_hold_same_value, decide_has_decide_message_in_network, inductive,
         inductive_next_implies_decide_has_decide_message_in_network, init as low_init,
-        next as low_next, safety, Constants as LowConstants, Variables as LowVariables,
+        next as low_next, promised_has_promise_message_in_network, safety,
+        Constants as LowConstants, Variables as LowVariables,
     },
     variables_abstraction, Event,
 };
@@ -34,6 +35,7 @@ verus! {
     {
         assert(inductive(c, v)) by {
             assert(v.network.in_flight_messages.finite());
+            assert(promised_has_promise_message_in_network(c, v));
             assert(accept_has_accept_message_in_network(c, v));
             assert(accepted_has_accepted_message_in_network(c, v));
             assert(decide_has_decide_message_in_network(c, v)) by { inductive_next_implies_decide_has_decide_message_in_network(c, u, v, event); };
