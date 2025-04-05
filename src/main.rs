@@ -8,7 +8,8 @@ use distributed_system::{
         all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id,
         all_decide_messages_hold_same_value,
         all_promised_and_accepted_sets_of_all_hosts_are_finite,
-        decide_has_decide_message_in_network, inductive,
+        decide_has_decide_message_in_network,
+        decide_message_exist_only_if_system_accepted_on_corresponding_ballot, inductive,
         inductive_next_implies_decide_has_decide_message_in_network, init as low_init,
         next as low_next, promised_has_promise_message_in_network, safety,
         Constants as LowConstants, Variables as LowVariables,
@@ -46,6 +47,7 @@ verus! {
             assert(accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, v));
             assert(accept_has_accept_message_in_network(c, v));
             assert(accepted_has_accepted_message_in_network(c, v));
+            assert(decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, v));
             assert(decide_has_decide_message_in_network(c, v)) by { inductive_next_implies_decide_has_decide_message_in_network(c, u, v, event); };
             assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
         };

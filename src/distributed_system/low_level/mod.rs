@@ -167,6 +167,20 @@ verus! {
             u.network.in_flight_messages.contains(Message::Accepted { sender, ballot })
     }
 
+    pub open spec fn decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c: &Constants, u: &Variables) -> bool {
+        forall |msg: Message| #![auto]
+            u.network.in_flight_messages.contains(msg) ==>
+            if let Message::Decide { ballot, .. } = msg {
+                let leader = ballot.pid as int;
+
+                &&& 0 <= leader < u.hosts.len()
+                &&& u.hosts[leader].accepted.contains_key(ballot)
+                &&& u.hosts[leader].accepted[ballot].len() > c.num_failures
+            } else {
+                true
+            }
+    }
+
     pub open spec fn decide_has_decide_message_in_network(c: &Constants, u: &Variables) -> bool {
         forall |i: int| #![auto]
             0 <= i < u.hosts.len() &&
@@ -193,9 +207,9 @@ verus! {
         &&& accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, u)
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
+        &&& decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, u)
         &&& decide_has_decide_message_in_network(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
-        &&& true
     }
 
     pub proof fn inductive_next_implies_decide_has_decide_message_in_network(c: &Constants, u: &Variables, v: &Variables, event: Event)
