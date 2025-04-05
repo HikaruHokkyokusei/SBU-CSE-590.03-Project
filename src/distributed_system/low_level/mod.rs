@@ -128,6 +128,28 @@ verus! {
                 ballot.pid == c.hosts[i].id
     }
 
+    pub open spec fn if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c: &Constants, u: &Variables) -> bool {
+        &&& forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].promised.contains_key(ballot) ==>
+                u.network.in_flight_messages.contains(Message::Prepare { ballot })
+        &&& forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].proposed_value.contains_key(ballot) ==>
+                u.network.in_flight_messages.contains(Message::Prepare { ballot })
+        &&& forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].accepted.contains_key(ballot) ==>
+                u.network.in_flight_messages.contains(Message::Prepare { ballot })
+    }
+
+    pub open spec fn promise_has_prepare_message_in_network(c: &Constants, u: &Variables) -> bool {
+        forall |i: int| #![auto]
+            0 <= i < u.hosts.len() &&
+            u.hosts[i].current_ballot.num > 0 ==>
+            u.network.in_flight_messages.contains(Message::Prepare { ballot: u.hosts[i].current_ballot })
+    }
+
     pub open spec fn promised_has_promise_message_in_network(c: &Constants, u: &Variables) -> bool {
         forall |i: int, ballot: host::Ballot, sender: nat| #![auto]
             0 <= i < u.hosts.len() &&
@@ -203,6 +225,8 @@ verus! {
         &&& u.network.in_flight_messages.finite()
         &&& all_promised_and_accepted_sets_of_all_hosts_are_finite(c, u)
         &&& all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, u)
+        &&& if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, u)
+        &&& promise_has_prepare_message_in_network(c, u)
         &&& promised_has_promise_message_in_network(c, u)
         &&& accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, u)
         &&& accept_has_accept_message_in_network(c, u)
