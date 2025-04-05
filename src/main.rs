@@ -2,7 +2,9 @@ use distributed_system::{
     constants_abstraction,
     high_level::{init as high_init, next as high_next},
     low_level::{
-        accept_has_accept_message_in_network, accepted_has_accepted_message_in_network,
+        accept_has_accept_message_in_network,
+        accept_message_exist_only_if_system_promised_on_corresponding_ballot,
+        accepted_has_accepted_message_in_network,
         all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id,
         all_decide_messages_hold_same_value,
         all_promised_and_accepted_sets_of_all_hosts_are_finite,
@@ -41,6 +43,7 @@ verus! {
             assert(all_promised_and_accepted_sets_of_all_hosts_are_finite(c, v));
             assert(all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, v));
             assert(promised_has_promise_message_in_network(c, v));
+            assert(accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, v));
             assert(accept_has_accept_message_in_network(c, v));
             assert(accepted_has_accepted_message_in_network(c, v));
             assert(decide_has_decide_message_in_network(c, v)) by { inductive_next_implies_decide_has_decide_message_in_network(c, u, v, event); };

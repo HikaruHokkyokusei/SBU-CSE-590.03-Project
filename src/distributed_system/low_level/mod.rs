@@ -136,6 +136,20 @@ verus! {
             u.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: u.hosts[i].promised[ballot][sender] })
     }
 
+    pub open spec fn accept_message_exist_only_if_system_promised_on_corresponding_ballot(c: &Constants, u: &Variables) -> bool {
+        forall |msg: Message| #![auto]
+            u.network.in_flight_messages.contains(msg) ==>
+            if let Message::Accept { ballot, .. } = msg {
+                let leader = ballot.pid as int;
+
+                &&& 0 <= leader < u.hosts.len()
+                &&& u.hosts[leader].promised.contains_key(ballot)
+                &&& u.hosts[leader].promised[ballot].len() > c.num_failures
+            } else {
+                true
+            }
+    }
+
     pub open spec fn accept_has_accept_message_in_network(c: &Constants, u: &Variables) -> bool {
         forall |i: int| #![auto]
             0 <= i < u.hosts.len() &&
@@ -176,6 +190,7 @@ verus! {
         &&& all_promised_and_accepted_sets_of_all_hosts_are_finite(c, u)
         &&& all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, u)
         &&& promised_has_promise_message_in_network(c, u)
+        &&& accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, u)
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
         &&& decide_has_decide_message_in_network(c, u)
