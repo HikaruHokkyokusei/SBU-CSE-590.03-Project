@@ -158,6 +158,20 @@ verus! {
             u.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: u.hosts[i].promised[ballot][sender] })
     }
 
+    pub open spec fn accept_message_exists_only_if_host_proposed_that_value(c: &Constants, u: &Variables) -> bool {
+        forall |msg: Message| #![auto]
+            u.network.in_flight_messages.contains(msg) ==>
+            if let Message::Accept { ballot, value } = msg {
+                let leader = ballot.pid as int;
+
+                &&& 0 <= leader < u.hosts.len()
+                &&& u.hosts[leader].proposed_value.contains_key(ballot)
+                &&& u.hosts[leader].proposed_value[ballot] == value
+            } else {
+                true
+            }
+    }
+
     pub open spec fn accept_message_exist_only_if_system_promised_on_corresponding_ballot(c: &Constants, u: &Variables) -> bool {
         forall |msg: Message| #![auto]
             u.network.in_flight_messages.contains(msg) ==>
@@ -234,6 +248,7 @@ verus! {
         &&& if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, u)
         &&& promise_has_prepare_message_in_network(c, u)
         &&& promised_has_promise_message_in_network(c, u)
+        &&& accept_message_exists_only_if_host_proposed_that_value(c, u)
         &&& accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, u)
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
