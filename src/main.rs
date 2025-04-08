@@ -4,6 +4,7 @@ use distributed_system::{
     low_level::{
         accept_has_accept_message_in_network,
         accept_message_exist_only_if_system_promised_on_corresponding_ballot,
+        accept_message_exists_only_if_host_proposed_that_value,
         accepted_has_accepted_message_in_network,
         all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id,
         all_decide_messages_hold_same_value,
@@ -50,6 +51,7 @@ verus! {
             assert(if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, v));
             assert(promise_has_prepare_message_in_network(c, v));
             assert(promised_has_promise_message_in_network(c, v));
+            assert(accept_message_exists_only_if_host_proposed_that_value(c, v));
             assert(accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, v));
             assert(accept_has_accept_message_in_network(c, v));
             assert(accepted_has_accepted_message_in_network(c, v));
