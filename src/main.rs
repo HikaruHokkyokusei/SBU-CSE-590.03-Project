@@ -10,9 +10,11 @@ use distributed_system::{
         all_promised_and_accepted_sets_of_all_hosts_are_finite,
         decide_has_decide_message_in_network,
         decide_message_exist_only_if_system_accepted_on_corresponding_ballot,
+        if_accepted_message_exists_then_accept_message_exists,
         if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare,
-        inductive, inductive_next_implies_decide_has_decide_message_in_network, init as low_init,
-        next as low_next, promise_has_prepare_message_in_network,
+        inductive, inductive_next_implies_decide_has_decide_message_in_network,
+        inductive_next_implies_if_accepted_message_exists_then_accept_message_exists,
+        init as low_init, next as low_next, promise_has_prepare_message_in_network,
         promised_has_promise_message_in_network, safety, Constants as LowConstants,
         Variables as LowVariables,
     },
@@ -51,6 +53,7 @@ verus! {
             assert(accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, v));
             assert(accept_has_accept_message_in_network(c, v));
             assert(accepted_has_accepted_message_in_network(c, v));
+            assert(if_accepted_message_exists_then_accept_message_exists(c, v)) by { inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c, u, v, event); };
             assert(decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, v));
             assert(decide_has_decide_message_in_network(c, v)) by { inductive_next_implies_decide_has_decide_message_in_network(c, u, v, event); };
             assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
