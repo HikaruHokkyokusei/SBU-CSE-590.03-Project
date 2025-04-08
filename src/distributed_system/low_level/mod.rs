@@ -209,6 +209,14 @@ verus! {
             (exists |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { ballot, value }))
     }
 
+    pub open spec fn if_someone_has_accepted_then_someone_has_proposed(c: &Constants, u: &Variables) -> bool {
+        forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < u.hosts.len() &&
+                u.hosts[i].accepted.contains_key(ballot) &&
+                u.hosts[i].accepted[ballot].len() > 0 ==>
+                u.hosts[i].proposed_value.contains_key(ballot)
+    }
+
     pub open spec fn decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c: &Constants, u: &Variables) -> bool {
         forall |msg: Message| #![auto]
             u.network.in_flight_messages.contains(msg) ==>
@@ -253,6 +261,7 @@ verus! {
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
         &&& if_accepted_message_exists_then_accept_message_exists(c, u)
+        &&& if_someone_has_accepted_then_someone_has_proposed(c, u)
         &&& decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, u)
         &&& decide_has_decide_message_in_network(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
