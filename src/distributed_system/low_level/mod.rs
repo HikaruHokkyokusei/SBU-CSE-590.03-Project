@@ -189,6 +189,12 @@ verus! {
             u.network.in_flight_messages.contains(Message::Accepted { sender, ballot })
     }
 
+    pub open spec fn if_accepted_message_exists_then_accept_message_exists(c: &Constants, u: &Variables) -> bool {
+        forall |sender: nat, ballot: host::Ballot| #![auto]
+            u.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) ==>
+            (exists |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { ballot, value }))
+    }
+
     pub open spec fn decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c: &Constants, u: &Variables) -> bool {
         forall |msg: Message| #![auto]
             u.network.in_flight_messages.contains(msg) ==>
@@ -231,9 +237,45 @@ verus! {
         &&& accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, u)
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
+        &&& if_accepted_message_exists_then_accept_message_exists(c, u)
         &&& decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, u)
         &&& decide_has_decide_message_in_network(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
+    }
+
+    pub proof fn inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c: &Constants, u: &Variables, v: &Variables, event: Event)
+    requires
+        inductive(c, u),
+        next(c, u, v, event),
+    ensures
+        if_accepted_message_exists_then_accept_message_exists(c, v),
+    {
+        let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, v, transition, event);
+        let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id]);
+
+        assert forall |sender: nat, ballot: host::Ballot| #![auto]
+            v.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) implies
+            exists |value: Value| #![auto] v.network.in_flight_messages.contains(Message::Accept { ballot, value })
+        by {
+            match (event) {
+                Event::NoOp => {
+                    let condition = host::send_prepare(lc, lu, lv, net_op) ||
+                        host::send_decide(lc, lu, lv, net_op) ||
+                        host::promise(lc, lu, lv, net_op) ||
+                        host::accept(lc, lu, lv, net_op) ||
+                        host::send_accept(lc, lu, lv, net_op);
+
+                    if (condition) {
+                        assert(exists |value: Value| #![auto] v.network.in_flight_messages.contains(Message::Accept { ballot, value })) by {
+                            assert(exists |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { ballot, value }));
+                            let existing_value = choose |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { ballot, value });
+                            assert(v.network.in_flight_messages.contains(Message::Accept { ballot, value: existing_value }));
+                        };
+                    }
+                },
+                _ => {}
+            }
+        };
     }
 
     pub proof fn inductive_next_implies_decide_has_decide_message_in_network(c: &Constants, u: &Variables, v: &Variables, event: Event)
