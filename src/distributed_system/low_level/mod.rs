@@ -170,6 +170,12 @@ verus! {
             u.network.in_flight_messages.contains(Message::Prepare { ballot: u.hosts[i].current_ballot })
     }
 
+    pub open spec fn if_promise_message_exists_then_sender_has_promised(c: &Constants, u: &Variables) -> bool {
+        forall |sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+            u.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted }) ==>
+            u.hosts[sender as int].current_ballot.cmp(&ballot) >= 0
+    }
+
     pub open spec fn promised_has_promise_message_in_network(c: &Constants, u: &Variables) -> bool {
         forall |i: int, ballot: host::Ballot, sender: nat| #![auto]
             0 <= i < u.hosts.len() &&
@@ -221,6 +227,15 @@ verus! {
             u.hosts[i].accepted.dom().contains(ballot) &&
             u.hosts[i].accepted[ballot].contains(sender) ==>
             u.network.in_flight_messages.contains(Message::Accepted { sender, ballot })
+    }
+
+    pub open spec fn if_accepted_message_exists_then_sender_has_accepted_some_value(c: &Constants, u: &Variables) -> bool {
+        forall |sender: nat, ballot: host::Ballot| #![auto]
+            u.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) ==>
+            u.hosts[sender as int].current_ballot.cmp(&ballot) >= 0 &&
+            u.hosts[sender as int].accept_ballot.is_some() &&
+            u.hosts[sender as int].accept_ballot.unwrap().cmp(&ballot) >= 0 &&
+            u.hosts[sender as int].accept_value.is_some()
     }
 
     pub open spec fn if_accepted_message_exists_then_accept_message_exists(c: &Constants, u: &Variables) -> bool {
@@ -276,11 +291,13 @@ verus! {
         &&& all_message_sender_and_ballot_pids_are_valid(c, u)
         &&& if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, u)
         &&& promise_has_prepare_message_in_network(c, u)
+        &&& if_promise_message_exists_then_sender_has_promised(c, u)
         &&& promised_has_promise_message_in_network(c, u)
         &&& accept_message_exists_only_if_host_proposed_that_value(c, u)
         &&& accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, u)
         &&& accept_has_accept_message_in_network(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
+        &&& if_accepted_message_exists_then_sender_has_accepted_some_value(c, u)
         &&& if_accepted_message_exists_then_accept_message_exists(c, u)
         &&& if_someone_has_accepted_then_someone_has_proposed(c, u)
         &&& decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, u)
