@@ -7,7 +7,7 @@ use distributed_system::{
         accept_message_exists_only_if_host_proposed_that_value,
         accepted_has_accepted_message_in_network,
         all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id,
-        all_decide_messages_hold_same_value,
+        all_decide_messages_hold_same_value, all_message_sender_and_ballot_pids_are_valid,
         all_promised_and_accepted_sets_of_all_hosts_are_finite,
         decide_has_decide_message_in_network,
         decide_message_exist_only_if_system_accepted_on_corresponding_ballot,
@@ -49,6 +49,7 @@ verus! {
             assert(v.network.in_flight_messages.finite());
             assert(all_promised_and_accepted_sets_of_all_hosts_are_finite(c, v));
             assert(all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, v));
+            assert(all_message_sender_and_ballot_pids_are_valid(c, v));
             assert(if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, v));
             assert(promise_has_prepare_message_in_network(c, v));
             assert(promised_has_promise_message_in_network(c, v));
