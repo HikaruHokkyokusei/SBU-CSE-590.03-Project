@@ -128,6 +128,26 @@ verus! {
                 ballot.pid == c.hosts[i].id
     }
 
+    pub open spec fn all_message_sender_and_ballot_pids_are_valid(c: &Constants, u: &Variables) -> bool {
+        &&& forall |ballot: host::Ballot| #![auto]
+                u.network.in_flight_messages.contains(Message::Prepare { ballot }) ==>
+                0 <= ballot.pid < u.hosts.len()
+        &&& forall |sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+                u.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted }) ==>
+                0 <= sender < u.hosts.len() &&
+                0 <= ballot.pid < u.hosts.len()
+        &&& forall |ballot: host::Ballot, value: Value| #![auto]
+                u.network.in_flight_messages.contains(Message::Accept { ballot, value }) ==>
+                0 <= ballot.pid < u.hosts.len()
+        &&& forall |sender: nat, ballot: host::Ballot| #![auto]
+                u.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) ==>
+                0 <= sender < u.hosts.len() &&
+                0 <= ballot.pid < u.hosts.len()
+        &&& forall |ballot: host::Ballot, value: Value| #![auto]
+                u.network.in_flight_messages.contains(Message::Decide { ballot, value }) ==>
+                0 <= ballot.pid < u.hosts.len()
+    }
+
     pub open spec fn if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c: &Constants, u: &Variables) -> bool {
         &&& forall |i: int, ballot: host::Ballot| #![auto]
                 0 <= i < u.hosts.len() &&
@@ -253,6 +273,7 @@ verus! {
         &&& u.network.in_flight_messages.finite()
         &&& all_promised_and_accepted_sets_of_all_hosts_are_finite(c, u)
         &&& all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, u)
+        &&& all_message_sender_and_ballot_pids_are_valid(c, u)
         &&& if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, u)
         &&& promise_has_prepare_message_in_network(c, u)
         &&& promised_has_promise_message_in_network(c, u)
