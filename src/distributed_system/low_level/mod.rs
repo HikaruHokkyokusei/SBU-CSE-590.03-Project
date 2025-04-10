@@ -106,11 +106,13 @@ verus! {
         &&& forall |i: int, ballot: host::Ballot| #![auto]
                 0 <= i < u.hosts.len() &&
                 u.hosts[i].promised.contains_key(ballot) ==>
-                u.hosts[i].promised[ballot].dom().finite()
+                u.hosts[i].promised[ballot].dom().finite() &&
+                0 <= u.hosts[i].promised[ballot].len() <= c.num_hosts
         &&& forall |i: int, ballot: host::Ballot| #![auto]
                 0 <= i < u.hosts.len() &&
                 u.hosts[i].accepted.contains_key(ballot) ==>
-                u.hosts[i].accepted[ballot].finite()
+                u.hosts[i].accepted[ballot].finite() &&
+                0 <= u.hosts[i].accepted[ballot].len() <= c.num_hosts
     }
 
     pub open spec fn all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c: &Constants, u: &Variables) -> bool {
@@ -303,6 +305,80 @@ verus! {
         &&& decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, u)
         &&& decide_has_decide_message_in_network(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
+    }
+
+    pub proof fn full_set_size(full_set: Set<nat>, max_val: nat)
+    requires
+        max_val > 0,
+        full_set =~= Set::new(|x: nat| 0 <= x < max_val),
+    ensures
+        full_set.finite(),
+        full_set.len() == max_val,
+    decreases
+        max_val
+    {
+        if (max_val == 1) {
+            assert(full_set =~= set![0]);
+            assert(full_set.finite());
+        } else {
+            let largest_val = (max_val - 1) as nat;
+            let sub_full_set = full_set.remove(largest_val);
+            full_set_size(sub_full_set, largest_val);
+        }
+    }
+
+    pub proof fn subset_size_is_smaller_than_superset_size<T>(sub_set: Set<T>, super_set: Set<T>)
+    requires
+        super_set.finite(),
+        sub_set.subset_of(super_set),
+    ensures
+        sub_set.finite(),
+        sub_set.len() <= super_set.len(),
+    decreases
+        sub_set.len()
+    {
+        if (sub_set =~= Set::<T>::empty()) { } else {
+            let value = sub_set.choose();
+            subset_size_is_smaller_than_superset_size(sub_set.remove(value), super_set.remove(value));
+        }
+    }
+
+    pub proof fn inductive_next_implies_all_promised_and_accepted_sets_of_all_hosts_are_finite(c: &Constants, u: &Variables, v: &Variables, event: Event)
+    requires
+        inductive(c, u),
+        next(c, u, v, event),
+    ensures
+        all_promised_and_accepted_sets_of_all_hosts_are_finite(c, v),
+    {
+        assert(u.network.in_flight_messages.finite());
+        assert(v.network.in_flight_messages.finite());
+
+        let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, v, transition, event);
+        let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id]);
+
+        assert forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < v.hosts.len() &&
+                v.hosts[i].promised.contains_key(ballot) implies
+                0 <= v.hosts[i].promised[ballot].len() <= c.num_hosts
+        by {
+            assert(forall |sender: nat| #![auto] v.hosts[i].promised[ballot].contains_key(sender) ==> 0 <= sender < c.num_hosts);
+
+            let full_set = Set::new(|x: nat| 0 <= x < c.num_hosts);
+            assert(full_set.finite() && full_set.len() == c.num_hosts) by { full_set_size(full_set, c.num_hosts); };
+            assert(v.hosts[i].promised[ballot].len() <= c.num_hosts) by { subset_size_is_smaller_than_superset_size(v.hosts[i].promised[ballot].dom(), full_set); };
+        };
+
+        assert forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < v.hosts.len() &&
+                v.hosts[i].accepted.contains_key(ballot) implies
+                0 <= v.hosts[i].accepted[ballot].len() <= c.num_hosts
+        by {
+            assert(forall |sender: nat| #![auto] v.hosts[i].accepted[ballot].contains(sender) ==> 0 <= sender < c.num_hosts);
+
+            let full_set = Set::new(|x: nat| 0 <= x < c.num_hosts);
+            assert(full_set.finite() && full_set.len() == c.num_hosts) by { full_set_size(full_set, c.num_hosts); };
+            assert(v.hosts[i].accepted[ballot].len() <= c.num_hosts) by { subset_size_is_smaller_than_superset_size(v.hosts[i].accepted[ballot], full_set); };
+        };
     }
 
     pub proof fn inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c: &Constants, u: &Variables, v: &Variables, event: Event)
