@@ -1,7 +1,9 @@
 use super::{Event, Value};
-use vstd::prelude::*;
+use vstd::{prelude::*, set_lib::*};
 
 verus! {
+    broadcast use vstd::set_lib::group_set_properties;
+
     pub mod host;
     pub mod network;
 
@@ -307,6 +309,156 @@ verus! {
         &&& all_decide_messages_hold_same_value(c, u)
     }
 
+/*  Redundant with `set_lib::lemma_set_disjoint_lens`
+    pub proof fn union_of_disjoint_sets_implies_sum_of_lengths<T>(set1: Set<T>, set2: Set<T>)
+    requires
+        set1.finite(),
+        set2.finite(),
+        set1 * set2 =~= Set::<T>::empty()
+    ensures
+        (set1 + set2).len() == set1.len() + set2.len()
+    decreases
+        set1.len() + set2.len()
+    {
+        let sum_of_lengths = set1.len() + set2.len();
+
+        if (sum_of_lengths == 0) {
+            assert(set1 =~= Set::<T>::empty() && set2 =~= Set::<T>::empty());
+            assert(set1 + set2 =~= Set::<T>::empty());
+            assert((set1 + set2).len() == sum_of_lengths);
+        } else {
+            if (set1.len() > 0) {
+                let x = set1.choose();
+
+                let (left, mid) = (set1.remove(x), set![x]);
+                assert(left.finite() && mid.finite() && mid.len() == 1);
+
+                let mid_value = mid.choose();
+                assert(mid.contains(mid_value) && mid_value == x);
+
+                assert(set1.len() == left.len() + 1);
+                union_of_disjoint_sets_implies_sum_of_lengths(left, set2);
+
+                let left_right = left + set2;
+                assert(left_right.len() == sum_of_lengths - 1);
+                assert(set1 + set2 =~= left_right + mid);
+
+                let complete = left_right.insert(mid_value);
+                assert(complete.len() == left_right.len() + 1);
+                assert(left_right + mid =~= complete);
+
+                assert((set1 + set2).len() == set1.len() + set2.len());
+            } else if (set2.len() > 0) {
+                let x = set2.choose();
+
+                let (mid, right) = (set![x], set2.remove(x));
+                assert(mid.finite() && right.finite() && mid.len() == 1);
+
+                let mid_value = mid.choose();
+                assert(mid.contains(mid_value) && mid_value == x);
+
+                assert(set2.len() == right.len() + 1);
+                union_of_disjoint_sets_implies_sum_of_lengths(set1, right);
+
+                let left_right = set1 + right;
+                assert(left_right.len() == sum_of_lengths - 1);
+                assert(set1 + set2 =~= left_right + mid);
+
+                let complete = left_right.insert(mid_value);
+                assert(complete.len() == left_right.len() + 1);
+                assert(left_right + mid =~= complete);
+
+                assert((set1 + set2).len() == set1.len() + set2.len());
+            } else {
+                assert(false);
+            }
+        }
+    }
+    */
+
+    pub proof fn subset_intersection_size_is_same_as_subset_size<T>(small_set: Set<T>, big_set: Set<T>)
+    requires
+        small_set.len() >= 0,
+        big_set.finite(),
+        small_set.subset_of(big_set),
+    ensures
+        small_set.finite(),
+        big_set * small_set =~= small_set,
+        (big_set * small_set).len() == small_set.len(),
+    decreases
+        small_set.len()
+    {
+        let intersection = big_set * small_set;
+
+        if (small_set =~= Set::<T>::empty()) {
+            assert(intersection =~= Set::<T>::empty());
+            assert(intersection.len() == small_set.len());
+        } else {
+            let x = small_set.choose();
+            let (sub_small_set, sub_big_set) = (small_set.remove(x), big_set.remove(x));
+            assert(sub_small_set.finite() && sub_big_set.finite());
+            subset_intersection_size_is_same_as_subset_size(sub_small_set, sub_big_set);
+
+            let non_existent_element_set = set![small_set.choose()];
+            assert(non_existent_element_set.is_singleton());
+
+            let sub_intersection = sub_big_set * sub_small_set;
+            assert(sub_intersection.finite() && sub_intersection.intersect(non_existent_element_set) =~= Set::empty());
+
+            assert(intersection =~= sub_intersection + non_existent_element_set);
+            assert(sub_intersection.len() == sub_small_set.len());
+
+            assert((sub_intersection + non_existent_element_set).len() == sub_intersection.len() + non_existent_element_set.len()) by {
+                lemma_set_disjoint_lens(sub_intersection, non_existent_element_set);
+            };
+        }
+    }
+
+    pub proof fn different_sized_sets_have_non_common_element<T>(set1: Set<T>, set2: Set<T>)
+    requires
+        set1.finite(),
+        set2.finite(),
+        set1.len() < set2.len(),
+    ensures
+        exists |x: T| #[trigger] set2.contains(x) && !set1.contains(x)
+    decreases
+        set1.len()
+    {
+        if set1 =~= Set::<T>::empty() {
+            let x = set2.choose();
+            assert(set2.contains(x) && !set1.contains(x));
+            assert(exists |x: T| #[trigger] set2.contains(x) && !set1.contains(x));
+        } else {
+            let x = set1.choose();
+            different_sized_sets_have_non_common_element(set1.remove(x), set2.remove(x));
+        }
+    }
+
+    pub proof fn removing_common_element_reduces_intersection_size_by_1<T>(small_set: Set<T>, big_set: Set<T>, common_element: T)
+    requires
+        small_set.finite(),
+        big_set.finite(),
+        (big_set * small_set).contains(common_element),
+    ensures
+        (big_set.remove(common_element) * small_set.remove(common_element)).len() == (big_set * small_set).len() - 1,
+    {
+        assert(small_set.contains(common_element) && big_set.contains(common_element));
+
+        let intersection = big_set * small_set;
+
+        let (sub_small_set, sub_big_set) = (small_set.remove(common_element), big_set.remove(common_element));
+        let sub_intersection = sub_big_set * sub_small_set;
+
+        let bridge = set![common_element];
+        assert(bridge.is_singleton());
+
+        assert(intersection =~= sub_intersection + bridge);
+        assert(intersection.len() == sub_intersection.len() + bridge.len()) by {
+            assert(sub_intersection * bridge =~= Set::<T>::empty());
+            lemma_set_disjoint_lens(sub_intersection, bridge);
+        };
+    }
+
     pub proof fn full_set_size(full_set: Set<nat>, max_val: nat)
     requires
         max_val > 0,
@@ -327,20 +479,63 @@ verus! {
         }
     }
 
-    pub proof fn subset_size_is_smaller_than_superset_size<T>(sub_set: Set<T>, super_set: Set<T>)
+    pub proof fn continuous_set_size_bounds(s: Set<nat>, max_val: nat)
     requires
-        super_set.finite(),
-        sub_set.subset_of(super_set),
+        s.finite(),
+        forall |x: nat| #[trigger] s.contains(x) ==> 0 <= x < max_val,
     ensures
-        sub_set.finite(),
-        sub_set.len() <= super_set.len(),
+        0 <= s.len() <= max_val
     decreases
-        sub_set.len()
+        max_val
     {
-        if (sub_set =~= Set::<T>::empty()) { } else {
-            let value = sub_set.choose();
-            subset_size_is_smaller_than_superset_size(sub_set.remove(value), super_set.remove(value));
+        if (max_val == 0) {
+            assert(forall |x: nat| s.contains(x) ==> 0 <= x < 0);
+            assert(s =~= Set::empty());
+        } else {
+            assert(max_val > 0);
+            let largest_value = (max_val - 1) as nat;
+
+            let ss = if (s.contains(largest_value)) {
+                s.remove(largest_value)
+            } else {
+                s
+            };
+
+            assert(forall |x: nat| #[trigger] ss.contains(x) ==> 0 <= x < largest_value);
+            continuous_set_size_bounds(ss, largest_value);
         }
+    }
+
+    pub proof fn overlapping_sets_have_common_element(set1: Set<nat>, set2: Set<nat>, floor_half_size: nat, full_size: nat)
+    requires
+        set1.finite(),
+        set2.finite(),
+        floor_half_size > 0,
+        full_size == ((2 * floor_half_size) + 1),
+        forall |x: nat| #![auto] set1.contains(x) ==> 0 <= x < full_size,
+        forall |x: nat| #![auto] set2.contains(x) ==> 0 <= x < full_size,
+        set1.len() > floor_half_size,
+        set2.len() > floor_half_size,
+    ensures
+        exists |x: nat| #![auto] set1.contains(x) && set2.contains(x)
+    {
+        assert(set1.len() + set2.len() > full_size);
+        assert(set1.union(set2).len() <= full_size) by { continuous_set_size_bounds(set1.union(set2), full_size); };
+
+        let (set1_size, set2_size) = (set1.len(), set2.len());
+        let (union, intersection) = (set1 + set2, set1 * set2);
+        let (union_size, intersection_size) = (union.len(), intersection.len());
+
+        assert(set1_size + set2_size == union_size + intersection_size) by { lemma_set_intersect_union_lens(set1, set2); };
+
+        let common_len = (set1.len() + set2.len() - (set1 + set2).len()) as nat;
+        assert(common_len >= 1);
+        assert(common_len == intersection_size);
+
+        assert(intersection.len() > 0);
+        let common_val = intersection.choose();
+        assert(intersection.contains(common_val));
+        assert(set1.contains(common_val) && set2.contains(common_val));
     }
 
     pub proof fn inductive_next_implies_all_promised_and_accepted_sets_of_all_hosts_are_finite(c: &Constants, u: &Variables, v: &Variables, event: Event)
@@ -365,7 +560,7 @@ verus! {
 
             let full_set = Set::new(|x: nat| 0 <= x < c.num_hosts);
             assert(full_set.finite() && full_set.len() == c.num_hosts) by { full_set_size(full_set, c.num_hosts); };
-            assert(v.hosts[i].promised[ballot].len() <= c.num_hosts) by { subset_size_is_smaller_than_superset_size(v.hosts[i].promised[ballot].dom(), full_set); };
+            assert(v.hosts[i].promised[ballot].len() <= c.num_hosts) by { lemma_len_subset(v.hosts[i].promised[ballot].dom(), full_set); };
         };
 
         assert forall |i: int, ballot: host::Ballot| #![auto]
@@ -377,7 +572,7 @@ verus! {
 
             let full_set = Set::new(|x: nat| 0 <= x < c.num_hosts);
             assert(full_set.finite() && full_set.len() == c.num_hosts) by { full_set_size(full_set, c.num_hosts); };
-            assert(v.hosts[i].accepted[ballot].len() <= c.num_hosts) by { subset_size_is_smaller_than_superset_size(v.hosts[i].accepted[ballot], full_set); };
+            assert(v.hosts[i].accepted[ballot].len() <= c.num_hosts) by { lemma_len_subset(v.hosts[i].accepted[ballot], full_set); };
         };
     }
 
