@@ -16,6 +16,7 @@ use distributed_system::{
         if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare,
         if_promise_message_exists_then_sender_has_promised,
         if_someone_has_accepted_then_someone_has_proposed, inductive,
+        inductive_next_implies_all_promised_and_accepted_sets_of_all_hosts_are_finite,
         inductive_next_implies_decide_has_decide_message_in_network,
         inductive_next_implies_if_accepted_message_exists_then_accept_message_exists,
         init as low_init, next as low_next, promise_has_prepare_message_in_network,
@@ -49,7 +50,7 @@ verus! {
     {
         assert(inductive(c, v)) by {
             assert(v.network.in_flight_messages.finite());
-            assert(all_promised_and_accepted_sets_of_all_hosts_are_finite(c, v));
+            assert(all_promised_and_accepted_sets_of_all_hosts_are_finite(c, v)) by { inductive_next_implies_all_promised_and_accepted_sets_of_all_hosts_are_finite(c, u, v, event); };
             assert(all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, v));
             assert(all_message_sender_and_ballot_pids_are_valid(c, v));
             assert(if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, v));
