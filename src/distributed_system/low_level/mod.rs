@@ -599,6 +599,37 @@ verus! {
         };
     }
 
+    pub proof fn if_accepted_map_has_some_value_then_max_accepted_value_is_some(accepted_map: Map<nat, Option<(host::Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+        exists |sender: nat| #[trigger] accepted_map.contains_key(sender) && accepted_map[sender].is_some(),
+    ensures
+        host::get_max_accepted_value(accepted_map).is_some(),
+    decreases
+        accepted_map.len()
+    {
+        assert(accepted_map.len() > 0);
+        let satisfying_key = choose |sender: nat| #[trigger] accepted_map.contains_key(sender) && accepted_map[sender].is_some();
+        let max_accepted_value = host::get_max_accepted_value(accepted_map);
+
+        if (accepted_map.dom().is_singleton()) {
+            let sub_acepted_map = accepted_map.remove(satisfying_key);
+            assert(sub_acepted_map =~= Map::empty());
+
+            let sub_max_accepted_value = host::get_max_accepted_value(sub_acepted_map);
+            assert(sub_max_accepted_value.is_none() && max_accepted_value == accepted_map[satisfying_key] && max_accepted_value.is_some());
+        } else {
+            let random_key = accepted_map.dom().choose();
+            let sub_random_accepted_map = accepted_map.remove(random_key);
+
+            assert(max_accepted_value == host::max_accepted_value_by_ballot(accepted_map[random_key], host::get_max_accepted_value(sub_random_accepted_map)));
+            if (random_key != satisfying_key) {
+                assert(sub_random_accepted_map.contains_key(satisfying_key));
+                if_accepted_map_has_some_value_then_max_accepted_value_is_some(sub_random_accepted_map);
+            }
+        }
+    }
+
     pub proof fn inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c: &Constants, u: &Variables, v: &Variables, event: Event)
     requires
         inductive(c, u),
