@@ -43,6 +43,8 @@ verus! {
     impl Constants {
         pub open spec fn well_formed(&self) -> bool {
             &&& 0 <= self.id < self.num_hosts
+            &&& self.num_hosts > 0
+            &&& self.num_failures > 0
             &&& self.num_hosts == ((2 * self.num_failures) + 1)
         }
     }

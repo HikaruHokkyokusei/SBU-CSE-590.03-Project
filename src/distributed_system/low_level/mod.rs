@@ -35,6 +35,7 @@ verus! {
     impl Constants {
         pub open spec fn well_formed(&self) -> bool {
             &&& self.num_hosts > 0
+            &&& self.num_failures > 0
             &&& self.num_hosts == ((2 * self.num_failures) + 1)
             &&& self.hosts.len() == self.num_hosts
             &&& forall |i: nat| #![auto]
@@ -256,6 +257,26 @@ verus! {
                 u.hosts[i].proposed_value.contains_key(ballot)
     }
 
+    pub open spec fn if_accepted_then_all_future_promise_have_some_accepted_value(c: &Constants, u: &Variables) -> bool {
+        forall |sender: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+            u.network.in_flight_messages.contains(Message::Accepted { sender, ballot: accepted_ballot }) &&
+            future_ballot.cmp(&accepted_ballot) > 0 &&
+            u.network.in_flight_messages.contains(Message::Promise { sender, ballot: future_ballot, accepted }) ==>
+            accepted.is_some()
+    }
+
+    pub open spec fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c: &Constants, u: &Variables) -> bool {
+        forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot| #![auto]
+            0 <= h1 < u.hosts.len() &&
+            0 <= h2 < u.hosts.len() &&
+            u.hosts[h1].accepted.contains_key(accepted_ballot) &&
+            u.hosts[h1].accepted[accepted_ballot].len() > c.num_failures &&
+            future_ballot.cmp(&accepted_ballot) > 0 &&
+            u.hosts[h2].promised.contains_key(future_ballot) &&
+            u.hosts[h2].promised[future_ballot].len() > c.num_failures ==>
+            exists |sender: nat| #![auto] u.hosts[h2].promised[future_ballot].contains_key(sender) && u.hosts[h2].promised[future_ballot][sender].is_some()
+    }
+
     pub open spec fn decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c: &Constants, u: &Variables) -> bool {
         forall |msg: Message| #![auto]
             u.network.in_flight_messages.contains(msg) ==>
@@ -304,6 +325,8 @@ verus! {
         &&& if_accepted_message_exists_then_sender_has_accepted_some_value(c, u)
         &&& if_accepted_message_exists_then_accept_message_exists(c, u)
         &&& if_someone_has_accepted_then_someone_has_proposed(c, u)
+        &&& if_accepted_then_all_future_promise_have_some_accepted_value(c, u)
+        &&& if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, u)
         &&& decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, u)
         &&& decide_has_decide_message_in_network(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
@@ -609,6 +632,50 @@ verus! {
                 _ => {}
             }
         };
+    }
+
+    pub proof fn inductive_next_implies_if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c: &Constants, u: &Variables, v: &Variables, event: Event)
+    requires
+        inductive(c, u),
+        next(c, u, v, event),
+    ensures
+        if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, v),
+    {
+        assert(u.network.in_flight_messages.finite());
+        assert(v.network.in_flight_messages.finite());
+        assert(all_promised_and_accepted_sets_of_all_hosts_are_finite(c, v)) by { inductive_next_implies_all_promised_and_accepted_sets_of_all_hosts_are_finite(c, u, v, event); };
+
+        let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, v, transition, event);
+        let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id]);
+
+        assert forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot| #![auto]
+            0 <= h1 < v.hosts.len() &&
+            0 <= h2 < v.hosts.len() &&
+            v.hosts[h1].accepted.contains_key(accepted_ballot) &&
+            v.hosts[h1].accepted[accepted_ballot].len() > c.num_failures &&
+            future_ballot.cmp(&accepted_ballot) > 0 &&
+            v.hosts[h2].promised.contains_key(future_ballot) &&
+            v.hosts[h2].promised[future_ballot].len() > c.num_failures implies
+            exists |sender: nat| #![auto] v.hosts[h2].promised[future_ballot].contains_key(sender) && v.hosts[h2].promised[future_ballot][sender].is_some()
+        by {
+            assert(v.hosts.len() == c.num_hosts);
+            assert(c.num_hosts == ((2 * c.num_failures) + 1));
+            assert(forall |x: nat| #[trigger] v.hosts[h1].accepted[accepted_ballot].contains(x) ==> 0 <= x < c.num_hosts);
+            assert(forall |x: nat| #[trigger] v.hosts[h2].promised[future_ballot].contains_key(x) ==> 0 <= x < c.num_hosts);
+            assert(exists |sender: nat| #[trigger] v.hosts[h1].accepted[accepted_ballot].contains(sender) && #[trigger] v.hosts[h2].promised[future_ballot].contains_key(sender)) by {
+                overlapping_sets_have_common_element(v.hosts[h1].accepted[accepted_ballot], v.hosts[h2].promised[future_ballot].dom(), c.num_failures, c.num_hosts);
+            };
+
+            let common_sender = choose |sender: nat| #[trigger] v.hosts[h1].accepted[accepted_ballot].contains(sender) && #[trigger] v.hosts[h2].promised[future_ballot].contains_key(sender);
+            assert(v.hosts[h1].accepted[accepted_ballot].contains(common_sender) && v.hosts[h2].promised[future_ballot].contains_key(common_sender));
+            assert(v.hosts[common_sender as int].accept_value.is_some());
+            assert(
+                forall |ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+                    v.network.in_flight_messages.contains(Message::Promise { sender: common_sender, ballot, accepted }) &&
+                    ballot.cmp(&accepted_ballot) > 0 ==> accepted.is_some()
+            );
+            assert(exists |sender: nat| #![auto] v.hosts[h2].promised[future_ballot].contains_key(sender) && v.hosts[h2].promised[future_ballot][sender].is_some());
+        }
     }
 
     pub proof fn inductive_next_implies_decide_has_decide_message_in_network(c: &Constants, u: &Variables, v: &Variables, event: Event)
