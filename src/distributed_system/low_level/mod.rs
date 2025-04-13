@@ -1,5 +1,8 @@
 use super::{Event, Value};
-use vstd::{prelude::*, set_lib::*};
+use vstd::{
+    calc,
+    {prelude::*, set_lib::*},
+};
 
 verus! {
     broadcast use vstd::set_lib::group_set_properties;
@@ -118,6 +121,19 @@ verus! {
                 0 <= u.hosts[i].accepted[ballot].len() <= c.num_hosts
     }
 
+    pub open spec fn is_largest_accepted_ballot_sender(accepted_map: Map<nat, Option<(host::Ballot, Value)>>, largest_accepted_ballot_sender: nat) -> bool {
+        &&& accepted_map.contains_key(largest_accepted_ballot_sender)
+        &&& accepted_map[largest_accepted_ballot_sender].is_some()
+        &&& {
+                let largest_accepted_ballot = accepted_map[largest_accepted_ballot_sender].unwrap().0;
+
+                forall |sender: nat|
+                    #[trigger] accepted_map.contains_key(sender) &&
+                    accepted_map[sender].is_some() ==>
+                    largest_accepted_ballot.cmp(&accepted_map[sender].unwrap().0) >= 0
+            }
+    }
+
     pub open spec fn all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c: &Constants, u: &Variables) -> bool {
         &&& forall |i: int, ballot: host::Ballot| #![auto]
                 0 <= i < u.hosts.len() &&
@@ -153,6 +169,14 @@ verus! {
                 0 <= ballot.pid < u.hosts.len()
     }
 
+    pub open spec fn same_ballot_corresponds_to_same_value(c: &Constants, u: &Variables) -> bool {
+        forall |sender: nat, b1: host::Ballot, a1: Option<(host::Ballot, Value)>, b2: host::Ballot, a2: Option<(host::Ballot, Value)>| #![auto]
+            u.network.in_flight_messages.contains(Message::Promise { sender, ballot: b1, accepted: a1 }) &&
+            u.network.in_flight_messages.contains(Message::Promise { sender, ballot: b2, accepted: a2 }) &&
+            b1 == b2 ==>
+            a1 == a2
+    }
+
     pub open spec fn if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c: &Constants, u: &Variables) -> bool {
         &&& forall |i: int, ballot: host::Ballot| #![auto]
                 0 <= i < u.hosts.len() &&
@@ -179,6 +203,12 @@ verus! {
         forall |sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
             u.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted }) ==>
             u.hosts[sender as int].current_ballot.cmp(&ballot) >= 0
+    }
+
+    pub open spec fn accepted_ballot_of_promise_message_is_smaller_than_promise_ballot(c: &Constants, u: &Variables) -> bool {
+        forall |sender: nat, promise_ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+            u.network.in_flight_messages.contains(Message::Promise { sender, ballot: promise_ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
+            accepted_ballot.cmp(&promise_ballot) < 0
     }
 
     pub open spec fn promised_has_promise_message_in_network(c: &Constants, u: &Variables) -> bool {
@@ -224,6 +254,13 @@ verus! {
             u.hosts[i].accept_ballot.is_some() &&
             u.hosts[i].accept_value.is_some() &&
             u.network.in_flight_messages.contains(Message::Accept { ballot: u.hosts[i].accept_ballot.unwrap(), value: u.hosts[i].accept_value.unwrap() })
+    }
+
+    pub open spec fn host_accept_ballot_is_none_or_leq_to_current_ballot(c: &Constants, u: &Variables) -> bool {
+        forall |i: int| #![auto]
+            0 <= i < u.hosts.len() &&
+            u.hosts[i].accept_ballot.is_some() ==>
+            u.hosts[i].accept_ballot.unwrap().cmp(&u.hosts[i].current_ballot) <= 0
     }
 
     pub open spec fn accepted_has_accepted_message_in_network(c: &Constants, u: &Variables) -> bool {
@@ -314,13 +351,16 @@ verus! {
         &&& all_promised_and_accepted_sets_of_all_hosts_are_finite(c, u)
         &&& all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, u)
         &&& all_message_sender_and_ballot_pids_are_valid(c, u)
+        &&& same_ballot_corresponds_to_same_value(c, u)
         &&& if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, u)
         &&& promise_has_prepare_message_in_network(c, u)
         &&& if_promise_message_exists_then_sender_has_promised(c, u)
+        &&& accepted_ballot_of_promise_message_is_smaller_than_promise_ballot(c, u)
         &&& promised_has_promise_message_in_network(c, u)
         &&& accept_message_exists_only_if_host_proposed_that_value(c, u)
         &&& accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, u)
         &&& accept_has_accept_message_in_network(c, u)
+        &&& host_accept_ballot_is_none_or_leq_to_current_ballot(c, u)
         &&& accepted_has_accepted_message_in_network(c, u)
         &&& if_accepted_message_exists_then_sender_has_accepted_some_value(c, u)
         &&& if_accepted_message_exists_then_accept_message_exists(c, u)
@@ -599,6 +639,62 @@ verus! {
         };
     }
 
+    pub proof fn all_values_are_none_iff_get_max_accepted_value_is_none(accepted_map: Map<nat, Option<(host::Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+    ensures
+        host::get_max_accepted_value(accepted_map).is_none() <==> (forall |sender: nat| #[trigger] accepted_map.contains_key(sender) ==> accepted_map[sender].is_none())
+    decreases
+        accepted_map.len()
+    {
+        if (accepted_map.dom() =~= Set::empty()) {
+        } else {
+            all_values_are_none_iff_get_max_accepted_value_is_none(accepted_map.remove(accepted_map.dom().choose()));
+        }
+    }
+
+    pub proof fn get_max_accepted_value_if_all_other_values_are_none(accepted_map: Map<nat, Option<(host::Ballot, Value)>>, sender: nat)
+    requires
+        accepted_map.dom().finite(),
+        accepted_map.contains_key(sender),
+        forall |s: nat| #[trigger] accepted_map.contains_key(s) && s != sender ==> accepted_map[s].is_none(),
+    ensures
+        host::get_max_accepted_value(accepted_map) == accepted_map[sender]
+    decreases
+        accepted_map.len()
+    {
+        assert(accepted_map.len() == accepted_map.dom().len() > 0);
+
+        if (accepted_map.len() == 1) {
+            assert(accepted_map.dom().is_singleton()) by { Set::lemma_is_singleton(accepted_map.dom()); };
+            calc! {
+                (==)
+                host::get_max_accepted_value(accepted_map); {}
+                host::max_accepted_value_by_ballot(accepted_map[sender], host::get_max_accepted_value(accepted_map.remove(sender))); {}
+                accepted_map[sender];
+            };
+            assert(host::get_max_accepted_value(accepted_map) == accepted_map[sender]);
+        } else {
+            let chosen_sender = accepted_map.dom().choose();
+            let sub_accepted_map = accepted_map.remove(chosen_sender);
+
+            if (chosen_sender != sender) {
+                assert(accepted_map[chosen_sender].is_none());
+                get_max_accepted_value_if_all_other_values_are_none(sub_accepted_map, sender);
+                assert(host::get_max_accepted_value(accepted_map) == accepted_map[sender]);
+            } else {
+                calc! {
+                    (==)
+                    host::get_max_accepted_value(accepted_map); {}
+                    host::max_accepted_value_by_ballot(accepted_map[chosen_sender], host::get_max_accepted_value(sub_accepted_map)); {
+                        all_values_are_none_iff_get_max_accepted_value_is_none(sub_accepted_map);
+                    }
+                    host::max_accepted_value_by_ballot(accepted_map[chosen_sender], None);
+                };
+            }
+        }
+    }
+
     pub proof fn if_accepted_map_has_some_value_then_max_accepted_value_is_some(accepted_map: Map<nat, Option<(host::Ballot, Value)>>)
     requires
         accepted_map.dom().finite(),
@@ -626,6 +722,54 @@ verus! {
             if (random_key != satisfying_key) {
                 assert(sub_random_accepted_map.contains_key(satisfying_key));
                 if_accepted_map_has_some_value_then_max_accepted_value_is_some(sub_random_accepted_map);
+            }
+        }
+    }
+
+    pub proof fn if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(accepted_map: Map<nat, Option<(host::Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+        exists |sender: nat| #[trigger] accepted_map.contains_key(sender) && accepted_map[sender].is_some()
+    ensures
+        exists |largest_accepted_ballot_sender: nat| #[trigger] is_largest_accepted_ballot_sender(accepted_map, largest_accepted_ballot_sender)
+    decreases
+        accepted_map.len()
+    {
+        assert(accepted_map.len() > 0);
+        let sender = accepted_map.dom().choose();
+
+        if (accepted_map.dom().is_singleton()) {
+            assert(is_largest_accepted_ballot_sender(accepted_map, sender));
+        } else {
+            let sub_accepted_map = accepted_map.remove(sender);
+            assert(sub_accepted_map.len() == accepted_map.len() - 1);
+
+            if (accepted_map[sender].is_none()) {
+                assert(accepted_map =~= sub_accepted_map.insert(sender, None));
+                assert(exists |sender: nat| #[trigger] sub_accepted_map.contains_key(sender) && sub_accepted_map[sender].is_some());
+                if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(sub_accepted_map);
+
+                let chosen_sender = choose |chosen_sender: nat| #[trigger] is_largest_accepted_ballot_sender(sub_accepted_map, chosen_sender);
+                assert(is_largest_accepted_ballot_sender(accepted_map, chosen_sender));
+            } else {
+                assert(accepted_map[sender].is_some() && sub_accepted_map.len() > 0);
+                let sender_ballot = accepted_map[sender].unwrap().0;
+
+                let other_sender = sub_accepted_map.dom().choose();
+                assert(other_sender != sender && sub_accepted_map.contains_key(other_sender));
+
+                if (exists |s: nat| #[trigger] sub_accepted_map.contains_key(s) && sub_accepted_map[s].is_some()) {
+                    if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(sub_accepted_map);
+
+                    let sub_largest_sender = choose |sub_largest_sender: nat| #[trigger] is_largest_accepted_ballot_sender(sub_accepted_map, sub_largest_sender);
+                    let sub_largest_sender_ballot = sub_accepted_map[sub_largest_sender].unwrap().0;
+
+                    if (sender_ballot.cmp(&sub_largest_sender_ballot) >= 0) {
+                        assert(is_largest_accepted_ballot_sender(accepted_map, sender));
+                    } else {
+                        assert(is_largest_accepted_ballot_sender(accepted_map, sub_largest_sender));
+                    }
+                }
             }
         }
     }
