@@ -286,6 +286,13 @@ verus! {
                 self.network.in_flight_messages.contains(Message::Accept { ballot: self.hosts[i].accept_ballot.unwrap(), value: self.hosts[i].accept_value.unwrap() })
         }
 
+        pub open spec fn accepted_state_implies_network_has_accepted_message(&self, c: &Constants) -> bool {
+            forall |sender: nat, ballot: host::Ballot| #![auto]
+                0 <= sender < self.hosts.len() &&
+                self.hosts[sender as int].accept_ballot == Some(ballot) ==>
+                self.network.in_flight_messages.contains(Message::Accepted { sender , ballot })
+        }
+
         pub open spec fn someone_accepted_implies_network_has_their_accepted_msg(&self, c: &Constants) -> bool {
             forall |i: int, ballot: host::Ballot, sender: nat| #![auto]
                 0 <= i < self.hosts.len() &&
@@ -336,6 +343,7 @@ verus! {
         &&& u.promised_state_implies_network_has_prepare_msg(c)
         &&& u.someone_promised_implies_network_has_their_promise_msg(c)
         &&& u.accepted_state_implies_network_has_accept_message(c)
+        &&& u.accepted_state_implies_network_has_accepted_message(c)
         &&& u.someone_accepted_implies_network_has_their_accepted_msg(c)
         &&& u.decided_state_implies_network_has_decide_message(c)
     }
@@ -373,6 +381,12 @@ verus! {
             forall |sender: nat, promise_ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
                 self.network.in_flight_messages.contains(Message::Promise { sender, ballot: promise_ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
                 accepted_ballot.cmp(&promise_ballot) < 0
+        }
+
+        pub open spec fn if_accepted_is_some_in_promise_message_then_network_has_corresponding_old_accepted_message(&self, c: &Constants) -> bool {
+            forall |sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
+                self.network.in_flight_messages.contains(Message::Accepted { sender, ballot: accepted_ballot })
         }
 
         pub open spec fn accepted_msg_in_network_implies_future_promises_of_same_sender_have_some_accepted(&self, c: &Constants) -> bool {
@@ -429,6 +443,7 @@ verus! {
         &&& u.network_msgs_have_valid_sender_and_ballot_pid(c)
         &&& u.promise_msgs_from_same_sender_for_same_ballot_have_same_accepted(c)
         &&& u.ballot_in_accepted_is_smaller_than_promise_message_ballot(c)
+        &&& u.if_accepted_is_some_in_promise_message_then_network_has_corresponding_old_accepted_message(c)
         &&& u.accepted_msg_in_network_implies_future_promises_of_same_sender_have_some_accepted(c)
         &&& u.accepted_msg_in_network_implies_network_has_corresponding_accept_msg(c)
     }
