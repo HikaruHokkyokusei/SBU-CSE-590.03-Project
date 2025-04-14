@@ -383,10 +383,29 @@ verus! {
                 accepted_ballot.cmp(&promise_ballot) < 0
         }
 
+        pub open spec fn value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot(&self, c: &Constants) -> bool {
+            forall |sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
+                {
+                    let leader = accepted_ballot.pid as int;
+
+                    &&& 0 <= leader < self.hosts.len()
+                    &&& self.hosts[leader].proposed_value.contains_key(accepted_ballot)
+                    &&& accepted_value == self.hosts[leader].proposed_value[accepted_ballot]
+                }
+        }
+
         pub open spec fn if_accepted_is_some_in_promise_message_then_network_has_corresponding_old_accepted_message(&self, c: &Constants) -> bool {
             forall |sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
                 self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
                 self.network.in_flight_messages.contains(Message::Accepted { sender, ballot: accepted_ballot })
+        }
+
+        pub open spec fn network_has_at_most_one_accept_message_for_any_ballot(&self, c: &Constants) -> bool {
+            forall |ballot: host::Ballot, v1: Value, v2: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Accept { ballot, value: v1 }) &&
+                self.network.in_flight_messages.contains(Message::Accept { ballot, value: v2 }) ==>
+                v1 == v2
         }
 
         pub open spec fn accepted_msg_in_network_implies_future_promises_of_same_sender_have_some_accepted(&self, c: &Constants) -> bool {
@@ -443,24 +462,43 @@ verus! {
         &&& u.network_msgs_have_valid_sender_and_ballot_pid(c)
         &&& u.promise_msgs_from_same_sender_for_same_ballot_have_same_accepted(c)
         &&& u.ballot_in_accepted_is_smaller_than_promise_message_ballot(c)
+        &&& u.value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot(c)
         &&& u.if_accepted_is_some_in_promise_message_then_network_has_corresponding_old_accepted_message(c)
+        &&& u.network_has_at_most_one_accept_message_for_any_ballot(c)
         &&& u.accepted_msg_in_network_implies_future_promises_of_same_sender_have_some_accepted(c)
         &&& u.accepted_msg_in_network_implies_network_has_corresponding_accept_msg(c)
     }
 
-    pub open spec fn if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c: &Constants, u: &Variables) -> bool {
-        &&& forall |i: int, ballot: host::Ballot| #![auto]
-                0 <= i < u.hosts.len() &&
-                u.hosts[i].promised.contains_key(ballot) ==>
-                u.network.in_flight_messages.contains(Message::Prepare { ballot })
-        &&& forall |i: int, ballot: host::Ballot| #![auto]
-                0 <= i < u.hosts.len() &&
-                u.hosts[i].proposed_value.contains_key(ballot) ==>
-                u.network.in_flight_messages.contains(Message::Prepare { ballot })
-        &&& forall |i: int, ballot: host::Ballot| #![auto]
-                0 <= i < u.hosts.len() &&
-                u.hosts[i].accepted.contains_key(ballot) ==>
-                u.network.in_flight_messages.contains(Message::Prepare { ballot })
+    impl Variables {
+        pub open spec fn if_host_maps_have_ballot_then_network_has_prepare_msg_with_same_ballot(&self, c: &Constants) -> bool {
+            &&& forall |i: int, ballot: host::Ballot| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].promised.contains_key(ballot) ==>
+                    self.network.in_flight_messages.contains(Message::Prepare { ballot })
+            &&& forall |i: int, ballot: host::Ballot| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].proposed_value.contains_key(ballot) ==>
+                    self.network.in_flight_messages.contains(Message::Prepare { ballot })
+            &&& forall |i: int, ballot: host::Ballot| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].accepted.contains_key(ballot) ==>
+                    self.network.in_flight_messages.contains(Message::Prepare { ballot })
+        }
+
+        pub open spec fn any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value(&self, c: &Constants) -> bool {
+            forall |h1: int, h2: int| #![auto]
+                0 <= h1 < self.hosts.len() &&
+                0 <= h2 < self.hosts.len() &&
+                self.hosts[h1].accept_ballot.is_some() &&
+                self.hosts[h1].accept_ballot == self.hosts[h2].accept_ballot ==>
+                self.hosts[h1].accept_value.is_some() &&
+                self.hosts[h1].accept_value == self.hosts[h2].accept_value
+        }
+    }
+
+    pub open spec fn properties_of_valid_host_states(c: &Constants, u: &Variables) -> bool {
+        &&& u.if_host_maps_have_ballot_then_network_has_prepare_msg_with_same_ballot(c)
+        &&& u.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value(c)
     }
 
     pub open spec fn host_accept_ballot_is_none_or_leq_to_current_ballot(c: &Constants, u: &Variables) -> bool {
@@ -507,7 +545,7 @@ verus! {
         &&& messages_in_network_implies_first_degree_properties(c, u)
         &&& properties_imply_first_degree_messages_in_network(c, u)
         &&& properties_of_valid_messages_in_network(c, u)
-        &&& if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, u)
+        &&& properties_of_valid_host_states(c, u)
         &&& host_accept_ballot_is_none_or_leq_to_current_ballot(c, u)
         &&& if_someone_has_accepted_then_someone_has_proposed(c, u)
         &&& if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, u)

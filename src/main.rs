@@ -35,7 +35,7 @@ verus! {
             assert(messages_in_network_implies_first_degree_properties(c, v));
             assert(properties_imply_first_degree_messages_in_network(c, v)) by { v.decided_state_implies_network_has_decide_message_is_inductive(c, u, event); };
             assert(properties_of_valid_messages_in_network(c, v)) by { v.inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c, u, event); };
-            assert(if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, v));
+            assert(properties_of_valid_host_states(c, v));
             assert(host_accept_ballot_is_none_or_leq_to_current_ballot(c, v));
             assert(if_someone_has_accepted_then_someone_has_proposed(c, v));
             assert(if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, v)) by { inductive_next_implies_if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, u, v, event); };
