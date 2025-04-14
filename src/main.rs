@@ -31,27 +31,14 @@ verus! {
     {
         assert(inductive(c, v)) by {
             assert(v.network.in_flight_messages.finite());
-            assert(all_promised_and_accepted_sets_of_all_hosts_are_finite(c, v)) by { inductive_next_implies_all_promised_and_accepted_sets_of_all_hosts_are_finite(c, u, v, event); };
-            assert(all_ballot_pids_in_host_maps_is_same_as_corresponding_host_id(c, v));
-            assert(all_message_sender_and_ballot_pids_are_valid(c, v));
-            assert(same_ballot_corresponds_to_same_value(c, v));
+            assert(host_map_properties(c, v)) by { v.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(messages_in_network_implies_first_degree_properties(c, v));
+            assert(properties_imply_first_degree_messages_in_network(c, v)) by { v.decided_state_implies_network_has_decide_message_is_inductive(c, u, event); };
+            assert(properties_of_valid_messages_in_network(c, v)) by { v.inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c, u, event); };
             assert(if_host_promised_or_accepted_has_ballot_then_network_contains_corresponding_prepare(c, v));
-            assert(promise_has_prepare_message_in_network(c, v));
-            assert(if_promise_message_exists_then_sender_has_promised(c, v));
-            assert(accepted_ballot_of_promise_message_is_smaller_than_promise_ballot(c, v));
-            assert(promised_has_promise_message_in_network(c, v));
-            assert(accept_message_exists_only_if_host_proposed_that_value(c, v));
-            assert(accept_message_exist_only_if_system_promised_on_corresponding_ballot(c, v));
-            assert(accept_has_accept_message_in_network(c, v));
             assert(host_accept_ballot_is_none_or_leq_to_current_ballot(c, v));
-            assert(accepted_has_accepted_message_in_network(c, v));
-            assert(if_accepted_message_exists_then_sender_has_accepted_some_value(c, v));
-            assert(if_accepted_message_exists_then_accept_message_exists(c, v)) by { inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c, u, v, event); };
             assert(if_someone_has_accepted_then_someone_has_proposed(c, v));
-            assert(if_accepted_then_all_future_promise_have_some_accepted_value(c, v));
             assert(if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, v)) by { inductive_next_implies_if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, u, v, event); };
-            assert(decide_message_exist_only_if_system_accepted_on_corresponding_ballot(c, v));
-            assert(decide_has_decide_message_in_network(c, v)) by { inductive_next_implies_decide_has_decide_message_in_network(c, u, v, event); };
             assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
         };
     }
