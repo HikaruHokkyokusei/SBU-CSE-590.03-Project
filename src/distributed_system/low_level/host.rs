@@ -1,6 +1,6 @@
 use super::{Message, NetworkOperation};
 use crate::distributed_system::{Event, Value};
-use vstd::prelude::*;
+use vstd::{calc, prelude::*};
 
 verus! {
     pub struct Ballot {
@@ -285,5 +285,378 @@ verus! {
                     ||| send_decide(c, u, v, net_op)
                 },
             }
+    }
+
+    pub open spec fn accepted_map_ballots_are_same(b1: Ballot, b2: Ballot) -> bool {
+        b1.cmp(&b2) == 0
+    }
+
+    pub open spec fn same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map: Map<nat, Option<(Ballot, Value)>>) -> bool {
+        forall |s1: nat, s2: nat|
+            accepted_map.contains_key(s1) &&
+            accepted_map.contains_key(s2) &&
+            accepted_map[s1].is_some() &&
+            accepted_map[s2].is_some() &&
+            #[trigger] accepted_map_ballots_are_same(accepted_map[s1].unwrap().0, accepted_map[s2].unwrap().0) ==>
+            accepted_map[s1].unwrap().1 == accepted_map[s2].unwrap().1
+    }
+
+    pub open spec fn is_largest_accepted_ballot_sender(accepted_map: Map<nat, Option<(Ballot, Value)>>, largest_accepted_ballot_sender: nat) -> bool {
+        &&& accepted_map.contains_key(largest_accepted_ballot_sender)
+        &&& accepted_map[largest_accepted_ballot_sender].is_some()
+        &&& {
+                let largest_accepted_ballot = accepted_map[largest_accepted_ballot_sender].unwrap().0;
+
+                forall |sender: nat|
+                    #[trigger] accepted_map.contains_key(sender) &&
+                    accepted_map[sender].is_some() ==>
+                    largest_accepted_ballot.cmp(&accepted_map[sender].unwrap().0) >= 0
+            }
+    }
+
+    pub proof fn if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(accepted_map: Map<nat, Option<(Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+        exists |sender: nat| #[trigger] accepted_map.contains_key(sender) && accepted_map[sender].is_some()
+    ensures
+        exists |largest_accepted_ballot_sender: nat| #[trigger] is_largest_accepted_ballot_sender(accepted_map, largest_accepted_ballot_sender)
+    decreases
+        accepted_map.len()
+    {
+        assert(accepted_map.len() > 0);
+        let sender = accepted_map.dom().choose();
+
+        if (accepted_map.dom().is_singleton()) {
+            assert(is_largest_accepted_ballot_sender(accepted_map, sender));
+        } else {
+            let sub_accepted_map = accepted_map.remove(sender);
+            assert(sub_accepted_map.len() == accepted_map.len() - 1);
+
+            if (accepted_map[sender].is_none()) {
+                assert(accepted_map =~= sub_accepted_map.insert(sender, None));
+                assert(exists |sender: nat| #[trigger] sub_accepted_map.contains_key(sender) && sub_accepted_map[sender].is_some());
+                if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(sub_accepted_map);
+
+                let chosen_sender = choose |chosen_sender: nat| #[trigger] is_largest_accepted_ballot_sender(sub_accepted_map, chosen_sender);
+                assert(is_largest_accepted_ballot_sender(accepted_map, chosen_sender));
+            } else {
+                assert(accepted_map[sender].is_some() && sub_accepted_map.len() > 0);
+                let sender_ballot = accepted_map[sender].unwrap().0;
+
+                let other_sender = sub_accepted_map.dom().choose();
+                assert(other_sender != sender && sub_accepted_map.contains_key(other_sender));
+
+                if (exists |s: nat| #[trigger] sub_accepted_map.contains_key(s) && sub_accepted_map[s].is_some()) {
+                    if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(sub_accepted_map);
+
+                    let sub_largest_sender = choose |sub_largest_sender: nat| #[trigger] is_largest_accepted_ballot_sender(sub_accepted_map, sub_largest_sender);
+                    let sub_largest_sender_ballot = sub_accepted_map[sub_largest_sender].unwrap().0;
+
+                    if (sender_ballot.cmp(&sub_largest_sender_ballot) >= 0) {
+                        assert(is_largest_accepted_ballot_sender(accepted_map, sender));
+                    } else {
+                        assert(is_largest_accepted_ballot_sender(accepted_map, sub_largest_sender));
+                    }
+                }
+            }
+        }
+    }
+
+    pub proof fn get_max_accepted_value_is_none_iff_all_accepted_values_are_none(accepted_map: Map<nat, Option<(Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+    ensures
+        get_max_accepted_value(accepted_map).is_none() <==> (forall |sender: nat| #[trigger] accepted_map.contains_key(sender) ==> accepted_map[sender].is_none())
+    decreases
+        accepted_map.len()
+    {
+        if (accepted_map.dom() =~= Set::empty()) {
+        } else {
+            get_max_accepted_value_is_none_iff_all_accepted_values_are_none(accepted_map.remove(accepted_map.dom().choose()));
+        }
+    }
+
+    pub proof fn get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(accepted_map: Map<nat, Option<(Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+    ensures
+        get_max_accepted_value(accepted_map).is_some() ==> (exists |s: nat| #![auto] accepted_map.contains_key(s) && accepted_map[s].is_some() && accepted_map[s] == get_max_accepted_value(accepted_map)),
+    decreases
+        accepted_map.len()
+    {
+        if (accepted_map.len() == 0) {
+            assert(get_max_accepted_value(accepted_map).is_none());
+        } else if (accepted_map.len() == 1) {
+            let chosen_sender = accepted_map.dom().choose();
+            let sub_accepted_map = accepted_map.remove(chosen_sender);
+            assert(accepted_map.contains_key(chosen_sender) && sub_accepted_map =~= Map::empty());
+
+            calc! {
+                (==)
+                get_max_accepted_value(accepted_map); {}
+                max_accepted_value_by_ballot(accepted_map[chosen_sender], get_max_accepted_value(sub_accepted_map)); {}
+                accepted_map[chosen_sender];
+            }
+
+            assert(get_max_accepted_value(accepted_map).is_some() ==> (exists |s: nat| #![auto] accepted_map.contains_key(s) && accepted_map[s] == get_max_accepted_value(accepted_map)));
+        } else {
+            let chosen_sender = accepted_map.dom().choose();
+            let sub_accepted_map = accepted_map.remove(chosen_sender);
+            assert(accepted_map.contains_key(chosen_sender) && !sub_accepted_map.contains_key(chosen_sender));
+
+            get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(sub_accepted_map);
+        }
+    }
+
+    pub proof fn get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(accepted_map: Map<nat, Option<(Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+        exists |sender: nat| #[trigger] accepted_map.contains_key(sender) && accepted_map[sender].is_some(),
+    ensures
+        get_max_accepted_value(accepted_map).is_some(),
+    decreases
+        accepted_map.len()
+    {
+        assert(accepted_map.len() > 0);
+        let satisfying_key = choose |sender: nat| #[trigger] accepted_map.contains_key(sender) && accepted_map[sender].is_some();
+        let max_accepted_value = get_max_accepted_value(accepted_map);
+
+        if (accepted_map.dom().is_singleton()) {
+            let sub_acepted_map = accepted_map.remove(satisfying_key);
+            assert(sub_acepted_map =~= Map::empty());
+
+            let sub_max_accepted_value = get_max_accepted_value(sub_acepted_map);
+            assert(sub_max_accepted_value.is_none() && max_accepted_value == accepted_map[satisfying_key] && max_accepted_value.is_some());
+        } else {
+            let random_key = accepted_map.dom().choose();
+            let sub_random_accepted_map = accepted_map.remove(random_key);
+
+            assert(max_accepted_value == max_accepted_value_by_ballot(accepted_map[random_key], get_max_accepted_value(sub_random_accepted_map)));
+            if (random_key != satisfying_key) {
+                assert(sub_random_accepted_map.contains_key(satisfying_key));
+                get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(sub_random_accepted_map);
+            }
+        }
+    }
+
+    pub proof fn get_max_accepted_value_is_same_as_sender_value_if_all_other_values_are_none(accepted_map: Map<nat, Option<(Ballot, Value)>>, sender: nat)
+    requires
+        accepted_map.dom().finite(),
+        accepted_map.contains_key(sender),
+        forall |s: nat| #[trigger] accepted_map.contains_key(s) && s != sender ==> accepted_map[s].is_none(),
+    ensures
+        get_max_accepted_value(accepted_map) == accepted_map[sender]
+    decreases
+        accepted_map.len()
+    {
+        assert(accepted_map.len() == accepted_map.dom().len() > 0);
+
+        if (accepted_map.len() == 1) {
+            assert(accepted_map.dom().is_singleton()) by { Set::lemma_is_singleton(accepted_map.dom()); };
+            calc! {
+                (==)
+                get_max_accepted_value(accepted_map); {}
+                max_accepted_value_by_ballot(accepted_map[sender], get_max_accepted_value(accepted_map.remove(sender))); {}
+                accepted_map[sender];
+            };
+            assert(get_max_accepted_value(accepted_map) == accepted_map[sender]);
+        } else {
+            let chosen_sender = accepted_map.dom().choose();
+            let sub_accepted_map = accepted_map.remove(chosen_sender);
+
+            if (chosen_sender != sender) {
+                assert(accepted_map[chosen_sender].is_none());
+                get_max_accepted_value_is_same_as_sender_value_if_all_other_values_are_none(sub_accepted_map, sender);
+                assert(get_max_accepted_value(accepted_map) == accepted_map[sender]);
+            } else {
+                calc! {
+                    (==)
+                    get_max_accepted_value(accepted_map); {}
+                    max_accepted_value_by_ballot(accepted_map[chosen_sender], get_max_accepted_value(sub_accepted_map)); {
+                        get_max_accepted_value_is_none_iff_all_accepted_values_are_none(sub_accepted_map);
+                    }
+                    max_accepted_value_by_ballot(accepted_map[chosen_sender], None);
+                };
+            }
+        }
+    }
+
+    pub proof fn get_max_accepted_ballot_corresponds_to_largest_ballot(accepted_map: Map<nat, Option<(Ballot, Value)>>)
+    requires
+        accepted_map.dom().finite(),
+        exists |sender: nat| #[trigger] accepted_map.contains_key(sender) && accepted_map[sender].is_some()
+    ensures
+        ({
+            let largest_accepted_ballot_sender = choose |largest_accepted_ballot_sender: nat| #[trigger] is_largest_accepted_ballot_sender(accepted_map, largest_accepted_ballot_sender);
+
+            &&& accepted_map.contains_key(largest_accepted_ballot_sender)
+            &&& get_max_accepted_value(accepted_map).is_some()
+            &&& get_max_accepted_value(accepted_map).unwrap().0 == accepted_map[largest_accepted_ballot_sender].unwrap().0
+        })
+    decreases
+        accepted_map.len()
+    {
+        assert(accepted_map.dom().finite() && accepted_map.len() > 0);
+
+        if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(accepted_map);
+        let largest_accepted_ballot_sender = choose |largest_accepted_ballot_sender: nat| #[trigger] is_largest_accepted_ballot_sender(accepted_map, largest_accepted_ballot_sender);
+        assert(accepted_map.contains_key(largest_accepted_ballot_sender) && accepted_map[largest_accepted_ballot_sender].is_some());
+        let largest_accepted_ballot = accepted_map[largest_accepted_ballot_sender].unwrap().0;
+
+        if (accepted_map.len() == 1) {
+            calc! {
+                (==)
+                get_max_accepted_value(accepted_map); {}
+                max_accepted_value_by_ballot(accepted_map[largest_accepted_ballot_sender], get_max_accepted_value(accepted_map.remove(largest_accepted_ballot_sender))); {}
+                max_accepted_value_by_ballot(accepted_map[largest_accepted_ballot_sender], None); {}
+                accepted_map[largest_accepted_ballot_sender];
+            };
+            assert(get_max_accepted_value(accepted_map) == accepted_map[largest_accepted_ballot_sender]);
+        } else {
+            let chosen_sender = accepted_map.dom().choose();
+            let sub_accepted_map = accepted_map.remove(chosen_sender);
+            let sub_response = get_max_accepted_value(sub_accepted_map);
+
+            assert(get_max_accepted_value(accepted_map) == max_accepted_value_by_ballot(accepted_map[chosen_sender], sub_response));
+
+            if (sub_response.is_none()) {
+                get_max_accepted_value_is_none_iff_all_accepted_values_are_none(sub_accepted_map);
+                assert(chosen_sender == largest_accepted_ballot_sender);
+                assert(get_max_accepted_value(accepted_map) == accepted_map[chosen_sender]);
+            } else {
+                let sub_largest_ballot = sub_response.unwrap().0;
+                assert(exists |sub_sender: nat| #![auto] sub_accepted_map.contains_key(sub_sender) && sub_accepted_map[sub_sender] == sub_response)
+                by { get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(sub_accepted_map); };
+                assert(largest_accepted_ballot.cmp(&sub_largest_ballot) >= 0);
+
+                if (chosen_sender == largest_accepted_ballot_sender) {
+                    assert(get_max_accepted_value(accepted_map) == accepted_map[largest_accepted_ballot_sender]);
+                } else {
+                    assert(sub_accepted_map.contains_key(largest_accepted_ballot_sender));
+                    assert(is_largest_accepted_ballot_sender(sub_accepted_map, largest_accepted_ballot_sender));
+                    get_max_accepted_ballot_corresponds_to_largest_ballot(sub_accepted_map);
+                    assert(get_max_accepted_value(accepted_map).unwrap().0 == accepted_map[largest_accepted_ballot_sender].unwrap().0);
+                }
+            }
+        }
+    }
+
+    pub proof fn get_max_accepted_value_is_commutative(accepted_map: Map<nat, Option<(Ballot, Value)>>, sender: nat)
+    requires
+        accepted_map.dom().finite(),
+        accepted_map.contains_key(sender),
+        same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map),
+    ensures
+        get_max_accepted_value(accepted_map) == max_accepted_value_by_ballot(accepted_map[sender], get_max_accepted_value(accepted_map.remove(sender)))
+    decreases
+        accepted_map.len()
+    {
+        let random_sender = accepted_map.dom().choose();
+
+        let no_sender_map = accepted_map.remove(sender);
+        let no_random_map = accepted_map.remove(random_sender);
+
+        let no_sender_result = get_max_accepted_value(no_sender_map);
+        let no_random_result = get_max_accepted_value(no_random_map);
+
+        let expected_result = get_max_accepted_value(accepted_map);
+        let calculated_result = max_accepted_value_by_ballot(accepted_map[sender], no_sender_result);
+
+        if (random_sender == sender) {
+            assert(expected_result == calculated_result);
+        } else {
+            assert(no_sender_map.contains_key(random_sender) && no_random_map.contains_key(sender));
+            get_max_accepted_value_is_commutative(no_random_map, sender);
+            assert(no_random_result == max_accepted_value_by_ballot(no_random_map[sender], get_max_accepted_value(no_random_map.remove(sender))));
+
+            if (no_sender_result.is_none()) {
+                get_max_accepted_value_is_none_iff_all_accepted_values_are_none(no_sender_map);
+                assert(accepted_map[random_sender].is_none() && expected_result == no_random_result);
+                assert(calculated_result == accepted_map[sender]);
+
+                if (no_random_result.is_none()) {
+                    assert(no_random_result == no_sender_result);
+
+                    get_max_accepted_value_is_none_iff_all_accepted_values_are_none(no_random_map);
+                    assert(accepted_map[sender].is_none());
+                    assert(no_sender_result == accepted_map[sender]);
+                    assert(no_random_result == accepted_map[sender]);
+                } else {
+                    assert(get_max_accepted_value(no_random_map.remove(sender)).is_none()) by { get_max_accepted_value_is_none_iff_all_accepted_values_are_none(no_random_map.remove(sender)); };
+                    assert(no_random_result == no_random_map[sender]);
+                    assert(no_random_result == accepted_map[sender]);
+                }
+
+                assert(expected_result == calculated_result);
+            } else {
+                get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(no_sender_map);
+                if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(no_sender_map);
+                let largest_non_sender_sender = choose |s: nat| #![auto] no_sender_map.contains_key(s) && no_sender_map[s] == no_sender_result;
+                let (lnss_ballot, lnss_value) = accepted_map[largest_non_sender_sender].unwrap();
+
+                get_max_accepted_ballot_corresponds_to_largest_ballot(no_sender_map);
+                assert(no_sender_result.unwrap().0 == no_sender_map[largest_non_sender_sender].unwrap().0);
+                assert(no_sender_result == no_sender_map[largest_non_sender_sender]);
+                assert(largest_non_sender_sender != sender);
+
+                if (no_random_result.is_none()) {
+                    assert(expected_result == accepted_map[random_sender]);
+
+                    get_max_accepted_value_is_none_iff_all_accepted_values_are_none(no_random_map);
+                    assert(no_random_map[sender].is_none() && calculated_result == no_sender_result);
+                    assert(largest_non_sender_sender == random_sender);
+                    assert(no_sender_result == accepted_map[random_sender]);
+                    assert(expected_result == calculated_result);
+                } else {
+                    assert(expected_result.is_some());
+                    get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(accepted_map);
+                    if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(accepted_map);
+                    let largest_sender = choose |s: nat| #![auto] accepted_map.contains_key(s) && accepted_map[s] == expected_result;
+                    let (ls_ballot, ls_value) = accepted_map[largest_sender].unwrap();
+
+                    get_max_accepted_ballot_corresponds_to_largest_ballot(accepted_map);
+                    assert(expected_result.unwrap().0 == accepted_map[largest_sender].unwrap().0);
+                    assert(expected_result == accepted_map[largest_sender]);
+
+                    get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(no_random_map);
+                    if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(no_random_map);
+                    let largest_non_random_sender = choose |s: nat| #![auto] no_random_map.contains_key(s) && no_random_map[s] == no_random_result;
+                    let (lnrs_ballot, lnrs_value) = accepted_map[largest_non_random_sender].unwrap();
+
+                    get_max_accepted_ballot_corresponds_to_largest_ballot(no_random_map);
+                    assert(no_random_result.unwrap().0 == no_random_map[largest_non_random_sender].unwrap().0);
+                    assert(no_random_result == no_random_map[largest_non_random_sender]);
+                    assert(largest_non_random_sender != random_sender);
+
+                    assert(expected_result == max_accepted_value_by_ballot(accepted_map[random_sender], accepted_map[largest_non_random_sender]));
+                    assert(calculated_result == max_accepted_value_by_ballot(accepted_map[sender], accepted_map[largest_non_sender_sender]));
+
+                    if (accepted_map[sender].is_none() && accepted_map[random_sender].is_none()) {
+                        assert(expected_result == accepted_map[largest_non_random_sender] && calculated_result == accepted_map[largest_non_sender_sender]);
+                        assert(largest_non_random_sender != sender && largest_non_sender_sender != random_sender);
+
+                        assert(is_largest_accepted_ballot_sender(accepted_map, largest_non_random_sender));
+                        assert(is_largest_accepted_ballot_sender(accepted_map, largest_non_sender_sender));
+                        assert(accepted_map_ballots_are_same(lnrs_ballot, lnss_ballot));
+                        assert(accepted_map[largest_non_random_sender] == accepted_map[largest_non_sender_sender]);
+                    } else if (accepted_map[sender].is_none()) {
+                        assert(calculated_result == accepted_map[largest_non_sender_sender]);
+                        assert(largest_non_random_sender != sender && random_sender != sender);
+
+                        assert(accepted_map_ballots_are_same(ls_ballot, lnss_ballot));
+                        assert(accepted_map[largest_non_sender_sender] == accepted_map[largest_sender]);
+                        assert(expected_result == calculated_result);
+                    } else {
+                        let (s_ballot, s_value) = accepted_map[sender].unwrap();
+                        let (other_largest_sender, other_largest_ballot) = if (s_ballot.cmp(&lnss_ballot) >= 0) { (sender, s_ballot) } else { (largest_non_sender_sender, lnss_ballot) };
+
+                        assert(calculated_result == accepted_map[other_largest_sender]);
+                        assert(accepted_map_ballots_are_same(ls_ballot, other_largest_ballot));
+                        assert(accepted_map[other_largest_sender] == accepted_map[largest_sender]);
+                        assert(expected_result == calculated_result);
+                    }
+                }
+            }
+        }
     }
 }
