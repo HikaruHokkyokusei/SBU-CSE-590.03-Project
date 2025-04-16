@@ -476,11 +476,19 @@ verus! {
                 self.hosts[h1].accept_value.is_some() &&
                 self.hosts[h1].accept_value == self.hosts[h2].accept_value
         }
+
+        pub open spec fn same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(&self, c: &Constants) -> bool {
+            forall |i: int, ballot: host::Ballot|
+                0 <= i < self.hosts.len() &&
+                self.hosts[i].promised.contains_key(ballot) ==>
+                #[trigger] host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(self.hosts[i].promised[ballot])
+        }
     }
 
     pub open spec fn properties_of_valid_host_states(c: &Constants, u: &Variables) -> bool {
         &&& u.if_host_maps_have_ballot_then_network_has_prepare_msg_with_same_ballot(c)
         &&& u.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value(c)
+        &&& u.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(c)
     }
 
     pub open spec fn host_accept_ballot_is_none_or_leq_to_current_ballot(c: &Constants, u: &Variables) -> bool {
