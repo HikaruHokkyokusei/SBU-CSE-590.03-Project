@@ -33,9 +33,17 @@ verus! {
             assert(v.network.in_flight_messages.finite());
             assert(host_map_properties(c, v)) by { v.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
             assert(messages_in_network_implies_first_degree_properties(c, v));
-            assert(properties_imply_first_degree_messages_in_network(c, v)) by { v.decided_state_implies_network_has_decide_message_is_inductive(c, u, event); };
-            assert(properties_of_valid_messages_in_network(c, v)) by { v.inductive_next_implies_if_accepted_message_exists_then_accept_message_exists(c, u, event); };
-            assert(properties_of_valid_host_states(c, v));
+            assert(properties_imply_first_degree_messages_in_network(c, v)) by {
+                v.accepted_state_implies_network_has_accept_message_is_inductive(c, u, event);
+                v.decided_state_implies_network_has_decide_message_is_inductive(c, u, event);
+            };
+            assert(properties_of_valid_messages_in_network(c, v)) by {
+                v.accepted_msg_in_network_implies_network_has_corresponding_accept_msg_is_inductive(c, u, event);
+                v.value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot_is_inductive(c, u, event);
+            };
+            assert(properties_of_valid_host_states(c, v)) by {
+                v.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value_is_inductive(c, u, event);
+            };
             assert(host_accept_ballot_is_none_or_leq_to_current_ballot(c, v));
             assert(if_someone_has_accepted_then_someone_has_proposed(c, v));
             assert(if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, v)) by { inductive_next_implies_if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, u, v, event); };
