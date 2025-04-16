@@ -395,7 +395,10 @@ verus! {
                 self.network.in_flight_messages.contains(Message::Accepted { sender, ballot: accepted_ballot }) &&
                 future_ballot.cmp(&accepted_ballot) > 0 &&
                 self.network.in_flight_messages.contains(Message::Promise { sender, ballot: future_ballot, accepted }) ==>
-                accepted.is_some()
+                {
+                    &&& accepted.is_some()
+                    &&& accepted.unwrap().0.cmp(&accepted_ballot) >= 0
+                }
         }
 
         pub open spec fn accepted_msg_in_network_implies_network_has_corresponding_accept_msg(&self, c: &Constants) -> bool {
@@ -523,7 +526,10 @@ verus! {
     }
 
     pub open spec fn two_maps_contain_values_with_min_len<K1, V1: HasLen, K2, V2: HasLen>(map1: Map<K1, V1>, map2: Map<K2, V2>, key1: K1, key2: K2, min_val: nat) -> bool {
-        map1.contains_key(key1) && map2.contains_key(key2) && map1[key1].get_len() > min_val && map2[key2].get_len() > min_val
+        &&& map1.contains_key(key1)
+        &&& map2.contains_key(key2)
+        &&& map1[key1].get_len() > min_val
+        &&& map2[key2].get_len() > min_val
     }
 
     pub open spec fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c: &Constants, u: &Variables) -> bool {
@@ -532,7 +538,7 @@ verus! {
             0 <= h2 < u.hosts.len() &&
             #[trigger] two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
             future_ballot.cmp(&accepted_ballot) > 0 ==>
-            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(u.hosts[h2].promised[future_ballot], sender)
+            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(u.hosts[h2].promised[future_ballot], sender) && u.hosts[h1].accepted[accepted_ballot].contains(sender)
     }
 
     pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
@@ -799,15 +805,12 @@ verus! {
         let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, v, transition, event);
         let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id]);
 
-        assert forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot| #![auto]
+        assert forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
             0 <= h1 < v.hosts.len() &&
             0 <= h2 < v.hosts.len() &&
-            v.hosts[h1].accepted.contains_key(accepted_ballot) &&
-            v.hosts[h1].accepted[accepted_ballot].len() > c.num_failures &&
-            future_ballot.cmp(&accepted_ballot) > 0 &&
-            v.hosts[h2].promised.contains_key(future_ballot) &&
-            v.hosts[h2].promised[future_ballot].len() > c.num_failures implies
-            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(v.hosts[h2].promised[future_ballot], sender)
+            #[trigger] two_maps_contain_values_with_min_len(v.hosts[h1].accepted, v.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
+            future_ballot.cmp(&accepted_ballot) > 0 implies
+            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(v.hosts[h2].promised[future_ballot], sender) && v.hosts[h1].accepted[accepted_ballot].contains(sender)
         by {
             assert(v.hosts.len() == c.num_hosts);
             assert(c.num_hosts == ((2 * c.num_failures) + 1));
