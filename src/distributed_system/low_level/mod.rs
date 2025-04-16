@@ -2,8 +2,6 @@ use super::{Event, Value};
 use vstd::{prelude::*, set_lib::*};
 
 verus! {
-    broadcast use vstd::set_lib::group_set_properties;
-
     pub mod host;
     pub mod network;
 
@@ -500,26 +498,40 @@ verus! {
                 u.hosts[i].proposed_value.contains_key(ballot)
     }
 
+    pub trait HasLen {
+        spec fn get_len(&self) -> nat;
+    }
+
+    impl<K, V> HasLen for Map<K, V> {
+        open spec fn get_len(&self) -> nat {
+            self.len()
+        }
+    }
+
+    impl<V> HasLen for Set<V> {
+        open spec fn get_len(&self) -> nat {
+            self.len()
+        }
+    }
+
+    pub open spec fn two_maps_contain_values_with_min_len<K1, V1: HasLen, K2, V2: HasLen>(map1: Map<K1, V1>, map2: Map<K2, V2>, key1: K1, key2: K2, min_val: nat) -> bool {
+        map1.contains_key(key1) && map2.contains_key(key2) && map1[key1].get_len() > min_val && map2[key2].get_len() > min_val
+    }
+
     pub open spec fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c: &Constants, u: &Variables) -> bool {
-        forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot| #![auto]
+        forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
             0 <= h1 < u.hosts.len() &&
             0 <= h2 < u.hosts.len() &&
-            u.hosts[h1].accepted.contains_key(accepted_ballot) &&
-            u.hosts[h1].accepted[accepted_ballot].len() > c.num_failures &&
-            future_ballot.cmp(&accepted_ballot) > 0 &&
-            u.hosts[h2].promised.contains_key(future_ballot) &&
-            u.hosts[h2].promised[future_ballot].len() > c.num_failures ==>
-            exists |sender: nat| #![auto] u.hosts[h2].promised[future_ballot].contains_key(sender) && u.hosts[h2].promised[future_ballot][sender].is_some()
+            #[trigger] two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
+            future_ballot.cmp(&accepted_ballot) > 0 ==>
+            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(u.hosts[h2].promised[future_ballot], sender)
     }
 
     pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
-        forall |msg1: Message, msg2: Message| #![auto]
-            u.network.in_flight_messages.contains(msg1) &&
-            u.network.in_flight_messages.contains(msg2) ==>
-            match (msg1, msg2) {
-                (Message::Decide { value: value1, .. }, Message::Decide { value: value2, .. }) => { value1 == value2 },
-                _ => { true }
-            }
+        forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
+            u.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
+            u.network.in_flight_messages.contains(Message::Decide { ballot: b2, value: v2 }) ==>
+            v1 == v2
     }
 
     pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
@@ -787,25 +799,26 @@ verus! {
             future_ballot.cmp(&accepted_ballot) > 0 &&
             v.hosts[h2].promised.contains_key(future_ballot) &&
             v.hosts[h2].promised[future_ballot].len() > c.num_failures implies
-            exists |sender: nat| #![auto] v.hosts[h2].promised[future_ballot].contains_key(sender) && v.hosts[h2].promised[future_ballot][sender].is_some()
+            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(v.hosts[h2].promised[future_ballot], sender)
         by {
             assert(v.hosts.len() == c.num_hosts);
             assert(c.num_hosts == ((2 * c.num_failures) + 1));
-            assert(forall |x: nat| #[trigger] v.hosts[h1].accepted[accepted_ballot].contains(x) ==> 0 <= x < c.num_hosts);
-            assert(forall |x: nat| #[trigger] v.hosts[h2].promised[future_ballot].contains_key(x) ==> 0 <= x < c.num_hosts);
-            assert(exists |sender: nat| #[trigger] v.hosts[h1].accepted[accepted_ballot].contains(sender) && #[trigger] v.hosts[h2].promised[future_ballot].contains_key(sender)) by {
+            assert(forall |x: nat| #![auto] v.hosts[h1].accepted[accepted_ballot].contains(x) ==> 0 <= x < c.num_hosts);
+            assert(forall |x: nat| #![auto] v.hosts[h2].promised[future_ballot].contains_key(x) ==> 0 <= x < c.num_hosts);
+            assert(exists |sender: nat| #![auto] v.hosts[h1].accepted[accepted_ballot].contains(sender) && v.hosts[h2].promised[future_ballot].contains_key(sender)) by {
                 overlapping_sets_have_common_element(v.hosts[h1].accepted[accepted_ballot], v.hosts[h2].promised[future_ballot].dom(), c.num_failures, c.num_hosts);
             };
 
-            let common_sender = choose |sender: nat| #[trigger] v.hosts[h1].accepted[accepted_ballot].contains(sender) && #[trigger] v.hosts[h2].promised[future_ballot].contains_key(sender);
+            let common_sender = choose |sender: nat| #![auto] v.hosts[h1].accepted[accepted_ballot].contains(sender) && v.hosts[h2].promised[future_ballot].contains_key(sender);
             assert(v.hosts[h1].accepted[accepted_ballot].contains(common_sender) && v.hosts[h2].promised[future_ballot].contains_key(common_sender));
             assert(v.hosts[common_sender as int].accept_value.is_some());
             assert(
                 forall |ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
                     v.network.in_flight_messages.contains(Message::Promise { sender: common_sender, ballot, accepted }) &&
-                    ballot.cmp(&accepted_ballot) > 0 ==> accepted.is_some()
+                    ballot.cmp(&accepted_ballot) > 0 ==>
+                    accepted.is_some()
             );
-            assert(exists |sender: nat| #![auto] v.hosts[h2].promised[future_ballot].contains_key(sender) && v.hosts[h2].promised[future_ballot][sender].is_some());
+            assert(host::map_has_key_with_some_value(v.hosts[h2].promised[future_ballot], common_sender));
         }
     }
 }
