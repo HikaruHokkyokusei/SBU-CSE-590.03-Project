@@ -636,6 +636,29 @@ verus! {
         &&& u.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(c)
     }
 
+    pub trait HasLen {
+        spec fn get_len(&self) -> nat;
+    }
+
+    impl<K, V> HasLen for Map<K, V> {
+        open spec fn get_len(&self) -> nat {
+            self.len()
+        }
+    }
+
+    impl<V> HasLen for Set<V> {
+        open spec fn get_len(&self) -> nat {
+            self.len()
+        }
+    }
+
+    pub open spec fn two_maps_contain_values_with_min_len<K1, V1: HasLen, K2, V2: HasLen>(map1: Map<K1, V1>, map2: Map<K2, V2>, key1: K1, key2: K2, min_val: nat) -> bool {
+        &&& map1.contains_key(key1)
+        &&& map2.contains_key(key2)
+        &&& map1[key1].get_len() > min_val
+        &&& map2[key2].get_len() > min_val
+    }
+
     impl Variables {
         pub open spec fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum(&self, c: &Constants) -> bool {
             forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
@@ -932,29 +955,6 @@ verus! {
                 u.hosts[i].accepted.contains_key(ballot) &&
                 u.hosts[i].accepted[ballot].len() > 0 ==>
                 u.hosts[i].proposed_value.contains_key(ballot)
-    }
-
-    pub trait HasLen {
-        spec fn get_len(&self) -> nat;
-    }
-
-    impl<K, V> HasLen for Map<K, V> {
-        open spec fn get_len(&self) -> nat {
-            self.len()
-        }
-    }
-
-    impl<V> HasLen for Set<V> {
-        open spec fn get_len(&self) -> nat {
-            self.len()
-        }
-    }
-
-    pub open spec fn two_maps_contain_values_with_min_len<K1, V1: HasLen, K2, V2: HasLen>(map1: Map<K1, V1>, map2: Map<K2, V2>, key1: K1, key2: K2, min_val: nat) -> bool {
-        &&& map1.contains_key(key1)
-        &&& map2.contains_key(key2)
-        &&& map1[key1].get_len() > min_val
-        &&& map2[key2].get_len() > min_val
     }
 
     pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
