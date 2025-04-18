@@ -42,6 +42,7 @@ verus! {
                 v.value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot_is_inductive(c, u, event);
             };
             assert(properties_of_valid_host_states(c, v)) by {
+                v.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event);
                 v.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value_is_inductive(c, u, event);
             };
             assert(host_accept_ballot_is_none_or_leq_to_current_ballot(c, v));
