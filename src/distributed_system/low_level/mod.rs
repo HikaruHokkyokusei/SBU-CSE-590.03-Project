@@ -636,6 +636,289 @@ verus! {
         &&& u.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(c)
     }
 
+    impl Variables {
+        pub open spec fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum(&self, c: &Constants) -> bool {
+            forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+                0 <= h1 < self.hosts.len() &&
+                0 <= h2 < self.hosts.len() &&
+                #[trigger] two_maps_contain_values_with_min_len(self.hosts[h1].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
+                future_ballot.cmp(&accepted_ballot) > 0 ==>
+                exists |sender: nat| #[trigger] host::map_has_key_with_some_value(self.hosts[h2].promised[future_ballot], sender) && self.hosts[h1].accepted[accepted_ballot].contains(sender)
+        }
+
+        pub open spec fn accepted_system_calculates_same_proposed_value_in_future(self, c: &Constants) -> bool {
+            forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+                0 <= h1 < self.hosts.len() &&
+                0 <= h2 < self.hosts.len() &&
+                #[trigger] two_maps_contain_values_with_min_len(self.hosts[h1].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
+                future_ballot.cmp(&accepted_ballot) > 0 ==>
+                {
+                    let old_accepted_value = self.hosts[h1].proposed_value[accepted_ballot];
+                    let calculated_new_proposed = host::get_max_accepted_value(self.hosts[h2].promised[future_ballot]);
+
+                    &&& calculated_new_proposed.is_some()
+                    &&& calculated_new_proposed.unwrap().1 == old_accepted_value
+                }
+        }
+
+        pub proof fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
+        requires
+            inductive(c, u),
+            next(c, u, self, event),
+        ensures
+            self.if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c),
+        {
+            assert(u.network.in_flight_messages.finite());
+            assert(self.network.in_flight_messages.finite());
+            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+
+            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
+
+            assert forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+                0 <= h1 < self.hosts.len() &&
+                0 <= h2 < self.hosts.len() &&
+                #[trigger] two_maps_contain_values_with_min_len(self.hosts[h1].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
+                future_ballot.cmp(&accepted_ballot) > 0 implies
+                exists |sender: nat| #[trigger] host::map_has_key_with_some_value(self.hosts[h2].promised[future_ballot], sender) && self.hosts[h1].accepted[accepted_ballot].contains(sender)
+            by {
+                assert(self.hosts.len() == c.num_hosts);
+                assert(c.num_hosts == ((2 * c.num_failures) + 1));
+                assert(forall |x: nat| #![auto] self.hosts[h1].accepted[accepted_ballot].contains(x) ==> 0 <= x < c.num_hosts);
+                assert(forall |x: nat| #![auto] self.hosts[h2].promised[future_ballot].contains_key(x) ==> 0 <= x < c.num_hosts);
+                assert(exists |sender: nat| #![auto] self.hosts[h1].accepted[accepted_ballot].contains(sender) && self.hosts[h2].promised[future_ballot].contains_key(sender)) by {
+                    overlapping_sets_have_common_element(self.hosts[h1].accepted[accepted_ballot], self.hosts[h2].promised[future_ballot].dom(), c.num_failures, c.num_hosts);
+                };
+
+                let common_sender = choose |sender: nat| #![auto] self.hosts[h1].accepted[accepted_ballot].contains(sender) && self.hosts[h2].promised[future_ballot].contains_key(sender);
+                assert(self.hosts[h1].accepted[accepted_ballot].contains(common_sender) && self.hosts[h2].promised[future_ballot].contains_key(common_sender));
+                assert(self.hosts[common_sender as int].accept_value.is_some());
+                assert(
+                    forall |ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+                        self.network.in_flight_messages.contains(Message::Promise { sender: common_sender, ballot, accepted }) &&
+                        ballot.cmp(&accepted_ballot) > 0 ==>
+                        accepted.is_some()
+                );
+                assert(host::map_has_key_with_some_value(self.hosts[h2].promised[future_ballot], common_sender));
+            }
+        }
+
+        pub proof fn inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future_for_accepted_host_step(&self, c: &Constants, u: &Variables, h1: int, sender: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot)
+        requires
+            inductive(c, u),
+            next(c, u, self, Event::NoOp),
+            host_step(c, u, self, h1, NetworkOperation { recv: Some(Message::Accepted { sender, ballot: accepted_ballot }), send: None }, Event::NoOp),
+            host::accepted(
+                &c.hosts[h1],
+                &u.hosts[h1],
+                &self.hosts[h1],
+                NetworkOperation { recv: Some(Message::Accepted { sender, ballot: accepted_ballot }), send: None }
+            ),
+            network::step(&c.network, &u.network, &self.network, NetworkOperation { recv: Some(Message::Accepted { sender, ballot: accepted_ballot }), send: None }),
+            0 <= future_ballot.pid < u.hosts.len(),
+            future_ballot.cmp(&accepted_ballot) > 0,
+            u.hosts[future_ballot.pid as int].promised.contains_key(future_ballot),
+            u.hosts[future_ballot.pid as int].promised[future_ballot].len() > c.num_failures,
+            self.hosts[h1].proposed_value.contains_key(accepted_ballot),
+            self.hosts[h1].accepted.contains_key(accepted_ballot),
+            self.hosts[h1].accepted[accepted_ballot].len() > c.num_failures,
+        ensures
+            ({
+                let calculated_result = host::get_max_accepted_value(u.hosts[future_ballot.pid as int].promised[future_ballot]);
+
+                &&& calculated_result.is_some()
+                &&& calculated_result.unwrap().1 == self.hosts[h1].proposed_value[accepted_ballot]
+            })
+        decreases
+            future_ballot.num, future_ballot.pid
+        {
+            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, Event::NoOp); };
+
+            assert(host::accepted(
+                &c.hosts[h1],
+                &u.hosts[h1],
+                &self.hosts[h1],
+                NetworkOperation { recv: Some(Message::Accepted { sender, ballot: accepted_ballot }), send: None }
+            ));
+
+            let h2 = future_ballot.pid as int;
+            let accepted_map = u.hosts[h2].promised[future_ballot];
+
+            assert(self.if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c)) by {
+                self.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, Event::NoOp);
+            };
+            assert(two_maps_contain_values_with_min_len(self.hosts[h1].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+            let common_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value(accepted_map, s) && self.hosts[h1].accepted[accepted_ballot].contains(s);
+            let (common_sender_ballot, common_sender_value) = accepted_map[common_sender].unwrap();
+            assert(common_sender_ballot.cmp(&accepted_ballot) >= 0);
+
+            host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(accepted_map);
+            let calculated_result = host::get_max_accepted_value(accepted_map);
+            assert(calculated_result.is_some());
+            let (calculated_ballot, calculated_value) = calculated_result.unwrap();
+
+            host::if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(accepted_map);
+            let largest_sender = choose |largest_sender: nat| #[trigger] host::is_largest_accepted_ballot_sender(accepted_map, largest_sender);
+            let (largest_sender_ballot, largest_sender_value) = accepted_map[largest_sender].unwrap();
+
+            host::get_max_accepted_ballot_corresponds_to_largest_ballot(accepted_map);
+            assert(calculated_ballot == largest_sender_ballot);
+            host::get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(accepted_map);
+            assert(calculated_value == largest_sender_value);
+
+            assert(largest_sender_ballot.cmp(&accepted_ballot) >= 0);
+
+            if (largest_sender_ballot == accepted_ballot) {
+                assert(calculated_value == self.hosts[h1].proposed_value[accepted_ballot]);
+            } else {
+                assert(self.network.in_flight_messages.contains(Message::Promise { sender: largest_sender, ballot: future_ballot, accepted: Some((largest_sender_ballot, largest_sender_value)) }));
+                assert(largest_sender_value == self.hosts[largest_sender_ballot.pid as int].proposed_value[largest_sender_ballot]);
+
+                assert(decreases_to!(future_ballot.num, future_ballot.pid => largest_sender_ballot.num, largest_sender_ballot.pid));
+                self.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future_for_accepted_host_step(c, u, h1, sender, accepted_ballot, largest_sender_ballot);
+                let old_calculated_result = host::get_max_accepted_value(u.hosts[largest_sender_ballot.pid as int].promised[largest_sender_ballot]);
+                assert(old_calculated_result.is_some());
+                let (old_result_ballot, old_result_value) = old_calculated_result.unwrap();
+                assert(old_result_value == self.hosts[h1].proposed_value[accepted_ballot]);
+
+                self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, Event::NoOp);
+                assert(self.proposed_some_value_and_get_max_accepted_value_is_some(largest_sender_ballot.pid as int, largest_sender_ballot));
+                assert(self.hosts[largest_sender_ballot.pid as int].proposed_value[largest_sender_ballot] == old_result_value);
+
+                assert(largest_sender_value == old_result_value);
+            }
+        }
+
+        pub proof fn inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(&self, c: &Constants, u: &Variables, event: Event)
+        requires
+            inductive(c, u),
+            next(c, u, self, event),
+        ensures
+            self.accepted_system_calculates_same_proposed_value_in_future(c),
+        {
+            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c)) by { self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event); };
+
+            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
+
+            assert forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+                0 <= h1 < self.hosts.len() &&
+                0 <= h2 < self.hosts.len() &&
+                #[trigger] two_maps_contain_values_with_min_len(self.hosts[h1].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
+                future_ballot.cmp(&accepted_ballot) > 0 implies
+                {
+                    let old_accepted_value = self.hosts[h1].proposed_value[accepted_ballot];
+                    let calculated_new_proposed = host::get_max_accepted_value(self.hosts[h2].promised[future_ballot]);
+
+                    &&& calculated_new_proposed.is_some()
+                    &&& calculated_new_proposed.unwrap().1 == old_accepted_value
+                }
+            by {
+                let old_accepted_value = self.hosts[h1].proposed_value[accepted_ballot];
+                assert(old_accepted_value == u.hosts[h1].proposed_value[accepted_ballot]);
+                let calculated_new_proposed = host::get_max_accepted_value(self.hosts[h2].promised[future_ballot]);
+
+                self.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
+                let common_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value(self.hosts[h2].promised[future_ballot], s) && self.hosts[h1].accepted[accepted_ballot].contains(s);
+                let (common_sender_ballot, common_sender_value) = self.hosts[h2].promised[future_ballot][common_sender].unwrap();
+                assert(common_sender_ballot.cmp(&accepted_ballot) >= 0);
+
+                host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(self.hosts[h2].promised[future_ballot]);
+                assert(calculated_new_proposed.is_some());
+                let (calculated_ballot, calculated_value) = calculated_new_proposed.unwrap();
+
+                match ((event, net_op.recv, net_op.send)) {
+                    (Event::NoOp, _, Some(Message::Prepare { ballot })) if (host::send_prepare(lc, lu, lv, net_op)) => {
+                        assert(ballot != accepted_ballot);
+                        assert(two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                        assert(calculated_value == old_accepted_value);
+                    },
+                    (Event::NoOp, Some(Message::Promise { sender, ballot, accepted }), _) if (host::promised(lc, lu, lv, net_op) && (h2 == host_id)) => {
+                        if (ballot == future_ballot) {
+                            let old_accepted_map = lu.promised[future_ballot];
+                            let new_accepted_map = lu.promised[future_ballot].insert(sender, accepted);
+                            assert(lv.promised[future_ballot] == new_accepted_map);
+                            assert(old_accepted_map.len() >= c.num_failures);
+
+                            assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(new_accepted_map));
+
+                            if (old_accepted_map.contains_key(sender)) {
+                                assert(new_accepted_map == old_accepted_map);
+                                assert(two_maps_contain_values_with_min_len(self.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                                assert(calculated_value == old_accepted_value);
+                            } else {
+                                host::if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(new_accepted_map);
+                                let largest_sender = choose |largest_sender: nat| #[trigger] host::is_largest_accepted_ballot_sender(new_accepted_map, largest_sender);
+                                let (largest_sender_ballot, largest_sender_value) = new_accepted_map[largest_sender].unwrap();
+                                assert(largest_sender_ballot != ballot);
+
+                                host::get_max_accepted_ballot_corresponds_to_largest_ballot(new_accepted_map);
+                                assert(calculated_ballot == largest_sender_ballot);
+                                host::get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(new_accepted_map);
+                                assert(calculated_value == largest_sender_value);
+                                assert(largest_sender_ballot.cmp(&accepted_ballot) >= 0);
+
+                                let largest_sender_ballot_leader = largest_sender_ballot.pid as int;
+                                assert(largest_sender_value == self.hosts[largest_sender_ballot_leader].proposed_value[largest_sender_ballot]);
+
+                                if (largest_sender_ballot == accepted_ballot) {
+                                    assert(calculated_value == old_accepted_value);
+                                } else {
+                                    assert(largest_sender_ballot.cmp(&accepted_ballot) > 0);
+                                    assert(two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[largest_sender_ballot_leader].promised, accepted_ballot, largest_sender_ballot, c.num_failures));
+                                    assert(host::get_max_accepted_value(u.hosts[largest_sender_ballot_leader].promised[largest_sender_ballot]).unwrap().1 == old_accepted_value);
+                                    assert(u.proposed_some_value_and_get_max_accepted_value_is_some(largest_sender_ballot_leader, largest_sender_ballot));
+                                    assert(u.hosts[largest_sender_ballot_leader].proposed_value[largest_sender_ballot] == old_accepted_value);
+                                    assert(calculated_value == old_accepted_value);
+                                }
+                            }
+                        } else {
+                            assert(two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                            assert(calculated_value == old_accepted_value);
+                        }
+                    },
+                    (Event::NoOp, Some(Message::Accepted { sender, ballot }), None) if (host::accepted(lc, lu, lv, net_op) && (h1 == host_id)) => {
+                        assert(self.hosts[h1].proposed_value == u.hosts[h1].proposed_value && self.hosts[h2].proposed_value == u.hosts[h2].proposed_value);
+                        assert(self.hosts[h1].promised == u.hosts[h1].promised && self.hosts[h2].promised == u.hosts[h2].promised);
+
+                        if ((ballot == accepted_ballot) && (lu.accepted[ballot].len() == c.num_failures)) {
+                            assert(ballot != future_ballot);
+
+                            let old_accepted_hosts = lu.accepted[ballot];
+                            let new_accepted_hosts = lu.accepted[ballot].insert(sender);
+                            assert(lv.accepted[ballot] == new_accepted_hosts);
+
+                            let accepted_map = self.hosts[h2].promised[future_ballot];
+
+                            assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map));
+                            host::if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(accepted_map);
+                            let largest_sender = choose |largest_sender: nat| #[trigger] host::is_largest_accepted_ballot_sender(accepted_map, largest_sender);
+                            let (largest_sender_ballot, largest_sender_value) = accepted_map[largest_sender].unwrap();
+
+                            host::get_max_accepted_ballot_corresponds_to_largest_ballot(accepted_map);
+                            assert(calculated_ballot == largest_sender_ballot);
+                            host::get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(accepted_map);
+                            assert(calculated_value == largest_sender_value);
+
+                            self.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future_for_accepted_host_step(c, u, h1, sender, accepted_ballot, future_ballot);
+                            assert(largest_sender_value == old_accepted_value);
+                        } else {
+                            assert(two_maps_contain_values_with_min_len(lu.accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                            assert(calculated_value == old_accepted_value);
+                        }
+                    },
+                    _ => { },
+                }
+            };
+        }
+    }
+
+    pub open spec fn system_quorum_properties(c: &Constants, u: &Variables) -> bool {
+        &&& u.if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c)
+        &&& u.accepted_system_calculates_same_proposed_value_in_future(c)
+    }
+
     pub open spec fn host_accept_ballot_is_none_or_leq_to_current_ballot(c: &Constants, u: &Variables) -> bool {
         forall |i: int| #![auto]
             0 <= i < u.hosts.len() &&
@@ -674,15 +957,6 @@ verus! {
         &&& map2[key2].get_len() > min_val
     }
 
-    pub open spec fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c: &Constants, u: &Variables) -> bool {
-        forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
-            0 <= h1 < u.hosts.len() &&
-            0 <= h2 < u.hosts.len() &&
-            #[trigger] two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
-            future_ballot.cmp(&accepted_ballot) > 0 ==>
-            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(u.hosts[h2].promised[future_ballot], sender) && u.hosts[h1].accepted[accepted_ballot].contains(sender)
-    }
-
     pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
         forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
             u.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
@@ -700,7 +974,7 @@ verus! {
         &&& properties_of_valid_host_states(c, u)
         &&& host_accept_ballot_is_none_or_leq_to_current_ballot(c, u)
         &&& if_someone_has_accepted_then_someone_has_proposed(c, u)
-        &&& if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, u)
+        &&& system_quorum_properties(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
     }
 
@@ -931,47 +1205,5 @@ verus! {
         let common_val = intersection.choose();
         assert(intersection.contains(common_val));
         assert(set1.contains(common_val) && set2.contains(common_val));
-    }
-
-    pub proof fn inductive_next_implies_if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c: &Constants, u: &Variables, v: &Variables, event: Event)
-    requires
-        inductive(c, u),
-        next(c, u, v, event),
-    ensures
-        if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, v),
-    {
-        assert(u.network.in_flight_messages.finite());
-        assert(v.network.in_flight_messages.finite());
-        assert(host_map_properties(c, v)) by { v.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
-
-        let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, v, transition, event);
-        let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id]);
-
-        assert forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
-            0 <= h1 < v.hosts.len() &&
-            0 <= h2 < v.hosts.len() &&
-            #[trigger] two_maps_contain_values_with_min_len(v.hosts[h1].accepted, v.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
-            future_ballot.cmp(&accepted_ballot) > 0 implies
-            exists |sender: nat| #[trigger] host::map_has_key_with_some_value(v.hosts[h2].promised[future_ballot], sender) && v.hosts[h1].accepted[accepted_ballot].contains(sender)
-        by {
-            assert(v.hosts.len() == c.num_hosts);
-            assert(c.num_hosts == ((2 * c.num_failures) + 1));
-            assert(forall |x: nat| #![auto] v.hosts[h1].accepted[accepted_ballot].contains(x) ==> 0 <= x < c.num_hosts);
-            assert(forall |x: nat| #![auto] v.hosts[h2].promised[future_ballot].contains_key(x) ==> 0 <= x < c.num_hosts);
-            assert(exists |sender: nat| #![auto] v.hosts[h1].accepted[accepted_ballot].contains(sender) && v.hosts[h2].promised[future_ballot].contains_key(sender)) by {
-                overlapping_sets_have_common_element(v.hosts[h1].accepted[accepted_ballot], v.hosts[h2].promised[future_ballot].dom(), c.num_failures, c.num_hosts);
-            };
-
-            let common_sender = choose |sender: nat| #![auto] v.hosts[h1].accepted[accepted_ballot].contains(sender) && v.hosts[h2].promised[future_ballot].contains_key(sender);
-            assert(v.hosts[h1].accepted[accepted_ballot].contains(common_sender) && v.hosts[h2].promised[future_ballot].contains_key(common_sender));
-            assert(v.hosts[common_sender as int].accept_value.is_some());
-            assert(
-                forall |ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
-                    v.network.in_flight_messages.contains(Message::Promise { sender: common_sender, ballot, accepted }) &&
-                    ballot.cmp(&accepted_ballot) > 0 ==>
-                    accepted.is_some()
-            );
-            assert(host::map_has_key_with_some_value(v.hosts[h2].promised[future_ballot], common_sender));
-        }
     }
 }

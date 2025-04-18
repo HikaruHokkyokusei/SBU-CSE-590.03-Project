@@ -47,7 +47,10 @@ verus! {
             };
             assert(host_accept_ballot_is_none_or_leq_to_current_ballot(c, v));
             assert(if_someone_has_accepted_then_someone_has_proposed(c, v));
-            assert(if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, v)) by { inductive_next_implies_if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c, u, v, event); };
+            assert(system_quorum_properties(c, v)) by {
+                v.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
+                v.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(c, u, event);
+            };
             assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
         };
     }
