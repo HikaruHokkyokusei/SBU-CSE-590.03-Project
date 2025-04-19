@@ -46,8 +46,10 @@ verus! {
                 v.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value_is_inductive(c, u, event);
             };
             assert(system_quorum_properties(c, v)) by {
+                v.if_host_proposed_then_quorum_has_promised_is_inductive(c, u, event);
                 v.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
                 v.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(c, u, event);
+                v.accepted_system_always_proposes_same_value_in_future_is_inductive(c, u, event);
             };
             assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
         };

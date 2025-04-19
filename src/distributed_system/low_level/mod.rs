@@ -669,14 +669,29 @@ verus! {
         }
     }
 
-    pub open spec fn two_maps_contain_values_with_min_len<K1, V1: HasLen, K2, V2: HasLen>(map1: Map<K1, V1>, map2: Map<K2, V2>, key1: K1, key2: K2, min_val: nat) -> bool {
-        &&& map1.contains_key(key1)
+    pub open spec fn map_contains_key_with_min_len<K, V: HasLen>(map: Map<K, V>, key: K, min_val: nat) -> bool {
+        &&& map.contains_key(key)
+        &&& map[key].get_len() > min_val
+    }
+
+    pub open spec fn map_contains_key_with_min_len_and_map_contains_key<K1, V1: HasLen, K2, V2>(map1: Map<K1, V1>, map2: Map<K2, V2>, key1: K1, key2: K2, min_val: nat) -> bool {
+        &&& map_contains_key_with_min_len(map1, key1, min_val)
         &&& map2.contains_key(key2)
-        &&& map1[key1].get_len() > min_val
-        &&& map2[key2].get_len() > min_val
+    }
+
+    pub open spec fn two_maps_contain_values_with_min_len<K1, V1: HasLen, K2, V2: HasLen>(map1: Map<K1, V1>, map2: Map<K2, V2>, key1: K1, key2: K2, min_val: nat) -> bool {
+        &&& map_contains_key_with_min_len(map1, key1, min_val)
+        &&& map_contains_key_with_min_len(map2, key2, min_val)
     }
 
     impl Variables {
+        pub open spec fn if_host_proposed_then_quorum_has_promised(&self, c: &Constants) -> bool {
+            forall |i: int, ballot: host::Ballot|
+                0 <= i < self.hosts.len() &&
+                self.hosts[i].proposed_value.contains_key(ballot) ==>
+                #[trigger] map_contains_key_with_min_len(self.hosts[i].promised, ballot, c.num_failures)
+        }
+
         pub open spec fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum(&self, c: &Constants) -> bool {
             forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
                 0 <= h1 < self.hosts.len() &&
@@ -699,6 +714,40 @@ verus! {
                     &&& calculated_new_proposed.is_some()
                     &&& calculated_new_proposed.unwrap().1 == old_accepted_value
                 }
+        }
+
+        pub open spec fn accepted_system_always_proposes_same_value_in_future(&self, c: &Constants) -> bool {
+            forall |i: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+                0 <= i < self.hosts.len() &&
+                0 <= future_ballot.pid < self.hosts.len() &&
+                #[trigger] map_contains_key_with_min_len_and_map_contains_key(self.hosts[i].accepted, self.hosts[future_ballot.pid as int].proposed_value, accepted_ballot, future_ballot, c.num_failures) &&
+                future_ballot.cmp(&accepted_ballot) >= 0 ==>
+                self.hosts[future_ballot.pid as int].proposed_value[future_ballot] == self.hosts[i].proposed_value[accepted_ballot]
+        }
+
+        pub proof fn if_host_proposed_then_quorum_has_promised_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
+        requires
+            inductive(c, u),
+            next(c, u, self, event),
+        ensures
+            self.if_host_proposed_then_quorum_has_promised(c),
+        {
+            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+
+            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
+
+            assert forall |i: int, ballot: host::Ballot|
+                0 <= i < self.hosts.len() &&
+                self.hosts[i].proposed_value.contains_key(ballot) implies
+                #[trigger] map_contains_key_with_min_len(self.hosts[i].promised, ballot, c.num_failures)
+            by {
+                if (u.hosts[i].proposed_value.contains_key(ballot)) {
+                    assert(self.hosts[i].proposed_value[ballot] == u.hosts[i].proposed_value[ballot]);
+                    assert(map_contains_key_with_min_len(u.hosts[i].promised, ballot, c.num_failures));
+                    assert(map_contains_key_with_min_len(self.hosts[i].promised, ballot, c.num_failures));
+                }
+            }
         }
 
         pub proof fn if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
@@ -952,11 +1001,55 @@ verus! {
                 }
             };
         }
+
+        pub proof fn accepted_system_always_proposes_same_value_in_future_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
+        requires
+            inductive(c, u),
+            next(c, u, self, event),
+        ensures
+            self.accepted_system_always_proposes_same_value_in_future(c),
+        {
+            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c)) by { self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event); };
+
+            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
+
+            assert forall |i: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+                0 <= i < self.hosts.len() &&
+                0 <= future_ballot.pid < self.hosts.len() &&
+                #[trigger] map_contains_key_with_min_len_and_map_contains_key(self.hosts[i].accepted, self.hosts[future_ballot.pid as int].proposed_value, accepted_ballot, future_ballot, c.num_failures) &&
+                future_ballot.cmp(&accepted_ballot) >= 0 implies
+                self.hosts[future_ballot.pid as int].proposed_value[future_ballot] == self.hosts[i].proposed_value[accepted_ballot]
+            by {
+                if (future_ballot.cmp(&accepted_ballot) > 0) {
+                    let h2 = future_ballot.pid as int;
+                    self.if_host_proposed_then_quorum_has_promised_is_inductive(c, u, event);
+                    assert(two_maps_contain_values_with_min_len(self.hosts[i].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                    let calculated_result = host::get_max_accepted_value(self.hosts[h2].promised[future_ballot]);
+                    self.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
+                    host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(self.hosts[h2].promised[future_ballot]);
+                    assert(calculated_result.is_some());
+                    let (calculated_ballot, calculated_value) = calculated_result.unwrap();
+
+
+                    self.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(c, u, event);
+                    assert(two_maps_contain_values_with_min_len(self.hosts[i].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                    assert(calculated_value == self.hosts[i].proposed_value[accepted_ballot]);
+
+                    self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event);
+                    assert(self.proposed_some_value_and_get_max_accepted_value_is_some(h2, future_ballot));
+                    assert(self.hosts[h2].proposed_value[future_ballot] == calculated_value);
+                }
+            };
+        }
     }
 
     pub open spec fn system_quorum_properties(c: &Constants, u: &Variables) -> bool {
+        &&& u.if_host_proposed_then_quorum_has_promised(c)
         &&& u.if_system_accepted_exists_some_accept_value_in_future_promise_quorum(c)
         &&& u.accepted_system_calculates_same_proposed_value_in_future(c)
+        &&& u.accepted_system_always_proposes_same_value_in_future(c)
     }
 
     pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
