@@ -227,6 +227,8 @@ verus! {
                     &&& 0 <= leader < self.hosts.len()
                     &&& self.hosts[leader].accepted.contains_key(ballot)
                     &&& self.hosts[leader].accepted[ballot].len() > c.num_failures
+                    &&& self.hosts[leader].proposed_value.contains_key(ballot)
+                    &&& value == self.hosts[leader].proposed_value[ballot]
                 }
         }
     }
@@ -432,6 +434,13 @@ verus! {
                 (exists |value: Value| #![auto] self.network.in_flight_messages.contains(Message::Accept { ballot, value }))
         }
 
+        pub open spec fn all_decide_messages_hold_same_value(&self, c: &Constants) -> bool {
+            forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
+                self.network.in_flight_messages.contains(Message::Decide { ballot: b2, value: v2 }) ==>
+                v1 == v2
+        }
+
         pub proof fn value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
         requires
             inductive(c, u),
@@ -507,6 +516,53 @@ verus! {
                 }
             };
         }
+
+        pub proof fn all_decide_messages_hold_same_value_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
+        requires
+            inductive(c, u),
+            next(c, u, self, event),
+        ensures
+            self.all_decide_messages_hold_same_value(c)
+        {
+            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c)) by { self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event); };
+
+            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
+
+            assert forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
+                self.network.in_flight_messages.contains(Message::Decide { ballot: b2, value: v2 }) implies
+                v1 == v2
+            by {
+                let (h1, h2) = (b1.pid as int, b2.pid as int);
+                assert(0 <= h1 < self.hosts.len() && 0 <= h2 < self.hosts.len());
+                assert(map_contains_key_with_min_len(self.hosts[h1].accepted, b1, c.num_failures));
+                assert(map_contains_key_with_min_len(self.hosts[h2].accepted, b2, c.num_failures));
+
+                assert(self.hosts[h1].proposed_value.contains_key(b1) && self.hosts[h2].proposed_value.contains_key(b2));
+                assert(v1 == self.hosts[h1].proposed_value[b1] && v2 == self.hosts[h2].proposed_value[b2]);
+
+                if (b1 != b2) {
+                    let (future_leader, future_ballot, future_value) = if (b1.cmp(&b2) > 0) {
+                        (h1, b1, v1)
+                    } else {
+                        (h2, b2, v2)
+                    };
+                    let (past_leader, past_ballot, past_value) = if (b1.cmp(&b2) > 0) {
+                        (h2, b2, v2)
+                    } else {
+                        (h1, b1, v1)
+                    };
+
+                    assert(future_ballot.cmp(&past_ballot) > 0);
+                    self.accepted_system_always_proposes_same_value_in_future_is_inductive(c, u, event);
+                    assert(map_contains_key_with_min_len_and_map_contains_key(self.hosts[past_leader].accepted, self.hosts[future_leader].proposed_value, past_ballot, future_ballot, c.num_failures));
+                }
+
+                assert (v1 == v2);
+            };
+        }
     }
 
     pub open spec fn properties_of_valid_messages_in_network(c: &Constants, u: &Variables) -> bool {
@@ -518,6 +574,7 @@ verus! {
         &&& u.network_has_at_most_one_accept_message_for_any_ballot(c)
         &&& u.accepted_msg_in_network_implies_future_promises_of_same_sender_have_some_accepted(c)
         &&& u.accepted_msg_in_network_implies_network_has_corresponding_accept_msg(c)
+        &&& u.all_decide_messages_hold_same_value(c)
     }
 
     impl Variables {
@@ -790,7 +847,7 @@ verus! {
             }
         }
 
-        pub proof fn inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future_for_accepted_host_step(&self, c: &Constants, u: &Variables, h1: int, sender: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot)
+        pub proof fn accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(&self, c: &Constants, u: &Variables, h1: int, sender: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot)
         requires
             inductive(c, u),
             next(c, u, self, Event::NoOp),
@@ -862,7 +919,7 @@ verus! {
                 assert(largest_sender_value == self.hosts[largest_sender_ballot.pid as int].proposed_value[largest_sender_ballot]);
 
                 assert(decreases_to!(future_ballot.num, future_ballot.pid => largest_sender_ballot.num, largest_sender_ballot.pid));
-                self.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future_for_accepted_host_step(c, u, h1, sender, accepted_ballot, largest_sender_ballot);
+                self.accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(c, u, h1, sender, accepted_ballot, largest_sender_ballot);
                 let old_calculated_result = host::get_max_accepted_value(u.hosts[largest_sender_ballot.pid as int].promised[largest_sender_ballot]);
                 assert(old_calculated_result.is_some());
                 let (old_result_ballot, old_result_value) = old_calculated_result.unwrap();
@@ -876,7 +933,7 @@ verus! {
             }
         }
 
-        pub proof fn inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(&self, c: &Constants, u: &Variables, event: Event)
+        pub proof fn accepted_system_calculates_same_proposed_value_in_future_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
         requires
             inductive(c, u),
             next(c, u, self, event),
@@ -988,7 +1045,7 @@ verus! {
                             host::get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(accepted_map);
                             assert(calculated_value == largest_sender_value);
 
-                            self.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future_for_accepted_host_step(c, u, h1, sender, accepted_ballot, future_ballot);
+                            self.accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(c, u, h1, sender, accepted_ballot, future_ballot);
                             assert(largest_sender_value == old_accepted_value);
                         } else {
                             assert(two_maps_contain_values_with_min_len(lu.accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
@@ -1031,7 +1088,7 @@ verus! {
                     let (calculated_ballot, calculated_value) = calculated_result.unwrap();
 
 
-                    self.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(c, u, event);
+                    self.accepted_system_calculates_same_proposed_value_in_future_is_inductive(c, u, event);
                     assert(two_maps_contain_values_with_min_len(self.hosts[i].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
                     assert(calculated_value == self.hosts[i].proposed_value[accepted_ballot]);
 
@@ -1050,13 +1107,6 @@ verus! {
         &&& u.accepted_system_always_proposes_same_value_in_future(c)
     }
 
-    pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
-        forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
-            u.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
-            u.network.in_flight_messages.contains(Message::Decide { ballot: b2, value: v2 }) ==>
-            v1 == v2
-    }
-
     pub open spec fn inductive(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c)
         &&& u.network.in_flight_messages.finite()
@@ -1066,7 +1116,6 @@ verus! {
         &&& properties_of_valid_messages_in_network(c, u)
         &&& properties_of_valid_host_states(c, u)
         &&& system_quorum_properties(c, u)
-        &&& all_decide_messages_hold_same_value(c, u)
     }
 
 /*  Redundant with `set_lib::lemma_set_disjoint_lens`

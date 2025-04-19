@@ -40,6 +40,7 @@ verus! {
             assert(properties_of_valid_messages_in_network(c, v)) by {
                 v.accepted_msg_in_network_implies_network_has_corresponding_accept_msg_is_inductive(c, u, event);
                 v.value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot_is_inductive(c, u, event);
+                v.all_decide_messages_hold_same_value_is_inductive(c, u, event);
             };
             assert(properties_of_valid_host_states(c, v)) by {
                 v.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event);
@@ -48,10 +49,9 @@ verus! {
             assert(system_quorum_properties(c, v)) by {
                 v.if_host_proposed_then_quorum_has_promised_is_inductive(c, u, event);
                 v.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
-                v.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(c, u, event);
+                v.accepted_system_calculates_same_proposed_value_in_future_is_inductive(c, u, event);
                 v.accepted_system_always_proposes_same_value_in_future_is_inductive(c, u, event);
             };
-            assert(all_decide_messages_hold_same_value(c, v)) by { assume(false); };
         };
     }
 
