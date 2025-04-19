@@ -219,16 +219,14 @@ verus! {
         }
 
         pub open spec fn decide_msg_in_network_implies_quorum_has_accepted_some_value(&self, c: &Constants) -> bool {
-            forall |msg: Message| #![auto]
-                self.network.in_flight_messages.contains(msg) ==>
-                if let Message::Decide { ballot, .. } = msg {
+            forall |ballot: host::Ballot, value: Value|
+                #[trigger] self.network.in_flight_messages.contains(Message::Decide { ballot, value }) ==>
+                {
                     let leader = ballot.pid as int;
 
                     &&& 0 <= leader < self.hosts.len()
                     &&& self.hosts[leader].accepted.contains_key(ballot)
                     &&& self.hosts[leader].accepted[ballot].len() > c.num_failures
-                } else {
-                    true
                 }
         }
     }
