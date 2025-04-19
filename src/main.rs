@@ -45,8 +45,6 @@ verus! {
                 v.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event);
                 v.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value_is_inductive(c, u, event);
             };
-            assert(host_accept_ballot_is_none_or_leq_to_current_ballot(c, v));
-            assert(if_someone_has_accepted_then_someone_has_proposed(c, v));
             assert(system_quorum_properties(c, v)) by {
                 v.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
                 v.inductive_next_implies_accepted_system_calculates_same_proposed_value_in_future(c, u, event);

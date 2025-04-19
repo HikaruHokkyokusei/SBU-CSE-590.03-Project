@@ -550,6 +550,13 @@ verus! {
                 self.hosts[i].proposed_value[ballot] == host::get_max_accepted_value(self.hosts[i].promised[ballot]).unwrap().1
         }
 
+        pub open spec fn host_accept_ballot_is_none_or_leq_to_current_ballot(&self, c: &Constants) -> bool {
+            forall |i: int| #![auto]
+                0 <= i < self.hosts.len() &&
+                self.hosts[i].accept_ballot.is_some() ==>
+                self.hosts[i].accept_ballot.unwrap().cmp(&self.hosts[i].current_ballot) <= 0
+        }
+
         pub open spec fn hosts_have_same_some_accept_ballot(&self, h1: int, h2: int) -> bool {
             &&& self.hosts[h1].accept_ballot.is_some()
             &&& self.hosts[h1].accept_ballot == self.hosts[h2].accept_ballot
@@ -566,6 +573,14 @@ verus! {
                 0 <= h2 < self.hosts.len() &&
                 #[trigger] self.hosts_have_same_some_accept_ballot(h1, h2) ==>
                 self.hosts_have_same_some_accept_value(h1, h2)
+        }
+
+        pub open spec fn if_someone_has_accepted_then_someone_has_proposed(&self, c: &Constants) -> bool {
+            forall |i: int, ballot: host::Ballot| #![auto]
+                0 <= i < self.hosts.len() &&
+                self.hosts[i].accepted.contains_key(ballot) &&
+                self.hosts[i].accepted[ballot].len() > 0 ==>
+                self.hosts[i].proposed_value.contains_key(ballot)
         }
 
         pub open spec fn same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(&self, c: &Constants) -> bool {
@@ -632,7 +647,9 @@ verus! {
     pub open spec fn properties_of_valid_host_states(c: &Constants, u: &Variables) -> bool {
         &&& u.if_host_maps_have_ballot_then_network_has_prepare_msg_with_same_ballot(c)
         &&& u.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c)
+        &&& u.host_accept_ballot_is_none_or_leq_to_current_ballot(c)
         &&& u.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value(c)
+        &&& u.if_someone_has_accepted_then_someone_has_proposed(c)
         &&& u.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(c)
     }
 
@@ -942,21 +959,6 @@ verus! {
         &&& u.accepted_system_calculates_same_proposed_value_in_future(c)
     }
 
-    pub open spec fn host_accept_ballot_is_none_or_leq_to_current_ballot(c: &Constants, u: &Variables) -> bool {
-        forall |i: int| #![auto]
-            0 <= i < u.hosts.len() &&
-            u.hosts[i].accept_ballot.is_some() ==>
-            u.hosts[i].accept_ballot.unwrap().cmp(&u.hosts[i].current_ballot) <= 0
-    }
-
-    pub open spec fn if_someone_has_accepted_then_someone_has_proposed(c: &Constants, u: &Variables) -> bool {
-        forall |i: int, ballot: host::Ballot| #![auto]
-                0 <= i < u.hosts.len() &&
-                u.hosts[i].accepted.contains_key(ballot) &&
-                u.hosts[i].accepted[ballot].len() > 0 ==>
-                u.hosts[i].proposed_value.contains_key(ballot)
-    }
-
     pub open spec fn all_decide_messages_hold_same_value(c: &Constants, u: &Variables) -> bool {
         forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
             u.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
@@ -972,8 +974,6 @@ verus! {
         &&& properties_imply_first_degree_messages_in_network(c, u)
         &&& properties_of_valid_messages_in_network(c, u)
         &&& properties_of_valid_host_states(c, u)
-        &&& host_accept_ballot_is_none_or_leq_to_current_ballot(c, u)
-        &&& if_someone_has_accepted_then_someone_has_proposed(c, u)
         &&& system_quorum_properties(c, u)
         &&& all_decide_messages_hold_same_value(c, u)
     }
