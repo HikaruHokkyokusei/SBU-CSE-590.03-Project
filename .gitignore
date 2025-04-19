@@ -1,5 +1,9 @@
 .idea
 .fleet
 .vscode
+.verus-solver-log
+
+main.long-type-*.txt
 
 /target
+/temp
