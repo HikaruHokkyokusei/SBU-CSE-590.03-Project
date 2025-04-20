@@ -30,7 +30,7 @@ verus! {
         pub num_failures: nat,
     }
 
-    pub struct Variables {
+    pub struct Instance {
         pub current_ballot: Ballot,
         pub promised: Map<Ballot, Map<nat, Option<(Ballot, Value)>>>,
         pub proposed_value: Map<Ballot, Value>,
@@ -38,6 +38,10 @@ verus! {
         pub accept_ballot: Option<Ballot>,
         pub accept_value: Option<Value>,
         pub decide_value: Option<Value>,
+    }
+
+    pub struct Variables {
+        pub instances: Map<nat, Instance>,
     }
 
     impl Constants {
@@ -52,7 +56,6 @@ verus! {
     impl Variables {
         pub open spec fn well_formed(&self, c: &Constants) -> bool {
             &&& c.well_formed()
-            &&& self.accept_ballot.is_some() == self.accept_value.is_some()
         }
     }
 
@@ -60,75 +63,103 @@ verus! {
         &&& u.well_formed(c)
         &&& c.id == host_id
         &&& c.num_hosts == num_hosts
-        &&& u.current_ballot == Ballot { num: 0, pid: 0 }
-        &&& u.promised.is_empty()
-        &&& u.proposed_value.is_empty()
-        &&& u.accepted.is_empty()
-        &&& u.accept_ballot.is_none()
-        &&& u.accept_value.is_none()
-        &&& u.decide_value.is_none()
+        &&& u.instances.is_empty()
     }
 
-    pub open spec fn send_prepare(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool
+    pub open spec fn init_request(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
-        let new_ballot = Ballot { num: u.current_ballot.num + 1, pid: c.id };
-
-        &&& u.decide_value.is_none()
+        &&& !u.instances.contains_key(key)
         &&& net_op.recv.is_none()
-        &&& !u.promised.dom().contains(new_ballot)
-        &&& !u.accepted.dom().contains(new_ballot)
-        &&& v.current_ballot == u.current_ballot
-        &&& v.promised == u.promised.insert(new_ballot, Map::empty())
-        &&& v.proposed_value == u.proposed_value
-        &&& v.accepted == u.accepted.insert(new_ballot, Set::empty())
-        &&& v.accept_ballot == u.accept_ballot
-        &&& v.accept_value == u.accept_value
-        &&& v.decide_value == u.decide_value
-        &&& net_op.send == Some(Message::Prepare { ballot: new_ballot })
+        &&& v.instances == u.instances.insert(key, Instance {
+            current_ballot: Ballot { num: 0, pid: 0 },
+            promised: Map::empty(),
+            proposed_value: Map::empty(),
+            accepted: Map::empty(),
+            accept_ballot: None,
+            accept_value: None,
+            decide_value: None,
+        })
+        &&& net_op.send.is_none()
     }
 
-    pub open spec fn promise(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool
+    pub open spec fn send_prepare(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
-        if let Some(Message::Prepare { ballot }) = net_op.recv {
-            &&& ballot.cmp(&u.current_ballot) == 1
-            &&& v.current_ballot == ballot
-            &&& v.promised == u.promised
-            &&& v.proposed_value == u.proposed_value
-            &&& v.accepted == u.accepted
-            &&& v.accept_ballot == u.accept_ballot
-            &&& v.accept_value == u.accept_value
-            &&& v.decide_value == u.decide_value
-            &&& net_op.send == if (u.accept_ballot.is_some()) {
-                    Some(Message::Promise { sender: c.id, ballot, accepted: Some((u.accept_ballot.unwrap(), u.accept_value.unwrap())) })
+        &&& u.instances.contains_key(key)
+        &&& net_op.recv.is_none()
+        &&& {
+            let new_ballot = Ballot { num: u.instances[key].current_ballot.num + 1, pid: c.id };
+
+            &&& !u.instances[key].promised.contains_key(new_ballot)
+            &&& !u.instances[key].proposed_value.contains_key(new_ballot)
+            &&& !u.instances[key].accepted.contains_key(new_ballot)
+            &&& u.instances[key].decide_value.is_none()
+            &&& v.instances == u.instances.insert(key, Instance {
+                    current_ballot: u.instances[key].current_ballot,
+                    promised: u.instances[key].promised.insert(new_ballot, Map::empty()),
+                    proposed_value: u.instances[key].proposed_value,
+                    accepted: u.instances[key].accepted.insert(new_ballot, Set::empty()),
+                    accept_ballot: u.instances[key].accept_ballot,
+                    accept_value: u.instances[key].accept_value,
+                    decide_value: u.instances[key].decide_value,
+                })
+            &&& net_op.send == Some(Message::Prepare { key, ballot: new_ballot })
+        }
+    }
+
+    pub open spec fn promise(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
+    recommends
+        u.well_formed(c),
+        v.well_formed(c),
+    {
+        if let Some(Message::Prepare { key: instance, ballot }) = net_op.recv {
+            &&& instance == key
+            &&& u.instances.contains_key(instance)
+            &&& ballot.cmp(&u.instances[instance].current_ballot) == 1
+            &&& v.instances[instance].current_ballot == ballot
+            &&& v.instances == u.instances.insert(instance, Instance {
+                    current_ballot: ballot,
+                    promised: u.instances[instance].promised,
+                    proposed_value: u.instances[instance].proposed_value,
+                    accepted: u.instances[instance].accepted,
+                    accept_ballot: u.instances[instance].accept_ballot,
+                    accept_value: u.instances[instance].accept_value,
+                    decide_value: u.instances[instance].decide_value,
+                })
+            &&& net_op.send == if (u.instances[instance].accept_ballot.is_some()) {
+                    Some(Message::Promise { key, sender: c.id, ballot, accepted: Some((u.instances[instance].accept_ballot.unwrap(), u.instances[instance].accept_value.unwrap())) })
                 } else {
-                    Some(Message::Promise { sender: c.id, ballot, accepted: None })
+                    Some(Message::Promise { key, sender: c.id, ballot, accepted: None })
                 }
         } else {
             &&& false
         }
     }
 
-    pub open spec fn promised(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool
+    pub open spec fn promised(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
-        if let Some(Message::Promise { sender, ballot, accepted }) = net_op.recv {
-            &&& u.promised.dom().contains(ballot)
-            &&& !u.proposed_value.contains_key(ballot)
-            &&& v.current_ballot == u.current_ballot
-            &&& v.promised == u.promised.insert(ballot, u.promised[ballot].insert(sender, accepted))
-            &&& v.proposed_value == u.proposed_value
-            &&& v.accepted == u.accepted
-            &&& v.accept_ballot == u.accept_ballot
-            &&& v.accept_value == u.accept_value
-            &&& v.decide_value == u.decide_value
+        if let Some(Message::Promise { key: instance, sender, ballot, accepted }) = net_op.recv {
+            &&& instance == key
+            &&& u.instances.contains_key(instance)
+            &&& u.instances[instance].promised.contains_key(ballot)
+            &&& !u.instances[instance].proposed_value.contains_key(ballot)
+            &&& v.instances == u.instances.insert(instance, Instance {
+                    current_ballot: u.instances[instance].current_ballot,
+                    promised: u.instances[instance].promised.insert(ballot, u.instances[instance].promised[ballot].insert(sender, accepted)),
+                    proposed_value: u.instances[instance].proposed_value,
+                    accepted: u.instances[instance].accepted,
+                    accept_ballot: u.instances[instance].accept_ballot,
+                    accept_value: u.instances[instance].accept_value,
+                    decide_value: u.instances[instance].decide_value,
+                })
             &&& net_op.send.is_none()
         } else {
             &&& false
@@ -167,122 +198,139 @@ verus! {
         }
     }
 
-    pub open spec fn send_accept(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool
+    pub open spec fn send_accept(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
+        let instance = key;
+
+        &&& u.instances.contains_key(instance)
         &&& net_op.recv.is_none()
-        &&& u.promised.contains_key(u.current_ballot)
-        &&& u.promised[u.current_ballot].len() > c.num_failures
-        &&& !u.proposed_value.contains_key(u.current_ballot)
-        &&& v.current_ballot == u.current_ballot
-        &&& v.promised == u.promised
-        &&& v.proposed_value == u.proposed_value.insert(
-                u.current_ballot,
-                if let Some((_, value)) = get_max_accepted_value(u.promised[u.current_ballot]) { value } else { c.id as Value }
-            )
-        &&& v.accepted == u.accepted
-        &&& v.accept_ballot == u.accept_ballot
-        &&& v.accept_value == u.accept_value
-        &&& v.decide_value == u.decide_value
-        &&& net_op.send == Some(Message::Accept { ballot: v.current_ballot, value: v.proposed_value[v.current_ballot] })
+        &&& u.instances[instance].promised.contains_key(u.instances[instance].current_ballot)
+        &&& u.instances[instance].promised[u.instances[instance].current_ballot].len() > c.num_failures
+        &&& !u.instances[instance].proposed_value.contains_key(u.instances[instance].current_ballot)
+        &&& v.instances == u.instances.insert(instance, Instance {
+                current_ballot: u.instances[instance].current_ballot,
+                promised: u.instances[instance].promised,
+                proposed_value: u.instances[instance].proposed_value.insert(
+                    u.instances[instance].current_ballot,
+                    if let Some((_, value)) = get_max_accepted_value(u.instances[instance].promised[u.instances[instance].current_ballot]) { value } else { c.id as Value }
+                ),
+                accepted: u.instances[instance].accepted,
+                accept_ballot: u.instances[instance].accept_ballot,
+                accept_value: u.instances[instance].accept_value,
+                decide_value: u.instances[instance].decide_value,
+            })
+        &&& net_op.send == Some(Message::Accept { key, ballot: v.instances[instance].current_ballot, value: v.instances[instance].proposed_value[v.instances[instance].current_ballot] })
     }
 
-    pub open spec fn accept(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool
+    pub open spec fn accept(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
-        if let Some(Message::Accept { ballot, value }) = net_op.recv {
-            &&& ballot.cmp(&u.current_ballot) == 1
-            &&& v.current_ballot == ballot
-            &&& v.promised == u.promised
-            &&& v.proposed_value == u.proposed_value
-            &&& v.accepted == u.accepted
-            &&& v.accept_ballot == Some(ballot)
-            &&& v.accept_value == Some(value)
-            &&& v.decide_value == u.decide_value
-            &&& net_op.send == Some(Message::Accepted { sender: c.id, ballot })
+        if let Some(Message::Accept { key: instance, ballot, value }) = net_op.recv {
+            &&& instance == key
+            &&& u.instances.contains_key(instance)
+            &&& ballot.cmp(&u.instances[instance].current_ballot) >= 0
+            &&& v.instances == u.instances.insert(instance, Instance {
+                    current_ballot: ballot,
+                    promised: u.instances[instance].promised,
+                    proposed_value: u.instances[instance].proposed_value,
+                    accepted: u.instances[instance].accepted,
+                    accept_ballot: Some(ballot),
+                    accept_value: Some(value),
+                    decide_value: u.instances[instance].decide_value,
+                })
+            &&& net_op.send == Some(Message::Accepted { key, sender: c.id, ballot })
         } else {
             &&& false
         }
     }
 
-    pub open spec fn accepted(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool
+    pub open spec fn accepted(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
-        if let Some(Message::Accepted { sender, ballot }) = net_op.recv {
-            &&& u.accepted.dom().contains(ballot)
-            &&& v.current_ballot == u.current_ballot
-            &&& v.promised == u.promised
-            &&& v.proposed_value == u.proposed_value
-            &&& v.accepted == u.accepted.insert(ballot, u.accepted[ballot].insert(sender))
-            &&& v.accept_ballot == u.accept_ballot
-            &&& v.accept_value == u.accept_value
-            &&& v.decide_value == u.decide_value
+        if let Some(Message::Accepted { key: instance, sender, ballot }) = net_op.recv {
+            &&& instance == key
+            &&& u.instances.contains_key(instance)
+            &&& u.instances[instance].accepted.contains_key(ballot)
+            &&& v.instances == u.instances.insert(instance, Instance {
+                    current_ballot: u.instances[instance].current_ballot,
+                    promised: u.instances[instance].promised,
+                    proposed_value: u.instances[instance].proposed_value,
+                    accepted: u.instances[instance].accepted.insert(ballot, u.instances[instance].accepted[ballot].insert(sender)),
+                    accept_ballot: u.instances[instance].accept_ballot,
+                    accept_value: u.instances[instance].accept_value,
+                    decide_value: u.instances[instance].decide_value,
+                })
             &&& net_op.send.is_none()
         } else {
             &&& false
         }
     }
 
-    pub open spec fn send_decide(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation) -> bool
+    pub open spec fn send_decide(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
+        let instance = key;
+
+        &&& u.instances.contains_key(instance)
         &&& net_op.recv.is_none()
-        &&& u.accept_ballot == Some(u.current_ballot)
-        &&& u.proposed_value.contains_key(u.current_ballot)
-        &&& u.accepted.contains_key(u.current_ballot)
-        &&& u.accepted[u.current_ballot].len() > c.num_failures
-        &&& v.current_ballot == u.current_ballot
-        &&& v.promised == u.promised
-        &&& v.proposed_value == u.proposed_value
-        &&& v.accepted == u.accepted
-        &&& v.accept_ballot == u.accept_ballot
-        &&& v.accept_value == u.accept_value
-        &&& v.decide_value == u.decide_value
-        &&& net_op.send == Some(Message::Decide { ballot: u.current_ballot, value: u.proposed_value[u.current_ballot] })
+        &&& u.instances[instance].proposed_value.contains_key(u.instances[instance].current_ballot)
+        &&& u.instances[instance].accepted.contains_key(u.instances[instance].current_ballot)
+        &&& u.instances[instance].accepted[u.instances[instance].current_ballot].len() > c.num_failures
+        &&& v == u
+        &&& net_op.send == Some(Message::Decide { key, ballot: u.instances[instance].current_ballot, value: u.instances[instance].proposed_value[u.instances[instance].current_ballot] })
     }
 
-    pub open spec fn decide(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation, expected_value: Value) -> bool
+    pub open spec fn decide(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation, expected_value: Value) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
-        if let Some(Message::Decide { ballot, value }) = net_op.recv {
-            &&& ballot.cmp(&u.current_ballot) == 1
+        if let Some(Message::Decide { key: instance, ballot, value }) = net_op.recv {
+            &&& instance == key
+            &&& u.instances.contains_key(instance)
+            &&& ballot.cmp(&u.instances[instance].current_ballot) == 1
             &&& value == expected_value
-            &&& v.current_ballot == ballot
-            &&& v.promised == u.promised
-            &&& v.proposed_value == u.proposed_value
-            &&& v.accepted == u.accepted
-            &&& v.accept_ballot == u.accept_ballot
-            &&& v.accept_value == u.accept_value
-            &&& v.decide_value == Some(value)
+            &&& v.instances == u.instances.insert(instance, Instance {
+                    current_ballot: ballot,
+                    promised: u.instances[instance].promised,
+                    proposed_value: u.instances[instance].proposed_value,
+                    accepted: u.instances[instance].accepted,
+                    accept_ballot: u.instances[instance].accept_ballot,
+                    accept_value: u.instances[instance].accept_value,
+                    decide_value: Some(value),
+                })
             &&& net_op.send.is_none()
         } else {
             &&& false
         }
     }
 
-    pub open spec fn step(c: &Constants, u: &Variables, v: &Variables, net_op: NetworkOperation, event: Event) -> bool {
+    pub open spec fn step(c: &Constants, u: &Variables, v: &Variables, key: nat, net_op: NetworkOperation, event: Event) -> bool {
         &&& u.well_formed(c)
         &&& v.well_formed(c)
         &&& match event {
-                Event::Decide { value } => decide(c, u, v, net_op, value),
+                Event::Decide { key: event_key, value } => {
+                    &&& event_key == key
+                    &&& decide(c, u, v, key, net_op, value)
+                },
                 Event::NoOp => {
-                    ||| send_prepare(c, u, v, net_op)
-                    ||| promise(c, u, v, net_op)
-                    ||| promised(c, u, v, net_op)
-                    ||| send_accept(c, u, v, net_op)
-                    ||| accept(c, u, v, net_op)
-                    ||| accepted(c, u, v, net_op)
-                    ||| send_decide(c, u, v, net_op)
+                    ||| init_request(c, u, v, key, net_op)
+                    ||| send_prepare(c, u, v, key, net_op)
+                    ||| promise(c, u, v, key, net_op)
+                    ||| promised(c, u, v, key, net_op)
+                    ||| send_accept(c, u, v, key, net_op)
+                    ||| accept(c, u, v, key, net_op)
+                    ||| accepted(c, u, v, key, net_op)
+                    ||| send_decide(c, u, v, key, net_op)
                 },
             }
     }
