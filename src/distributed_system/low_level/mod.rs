@@ -6,11 +6,11 @@ verus! {
     pub mod network;
 
     pub enum Message {
-        Prepare { ballot: host::Ballot },
-        Promise { sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)> },
-        Accept { ballot: host::Ballot, value: Value },
-        Accepted { sender: nat, ballot: host::Ballot },
-        Decide { ballot: host::Ballot, value: Value },
+        Prepare { key: nat, ballot: host::Ballot },
+        Promise { key: nat, sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)> },
+        Accept { key: nat, ballot: host::Ballot, value: Value },
+        Accepted { key: nat, sender: nat, ballot: host::Ballot },
+        Decide { key: nat, ballot: host::Ballot, value: Value },
     }
 
     pub struct NetworkOperation {
@@ -61,17 +61,17 @@ verus! {
     }
 
     pub enum Transition {
-        HostStep { host_id: int, net_op: NetworkOperation }
+        HostStep { host_id: int, instance: nat, net_op: NetworkOperation }
     }
 
-    pub open spec fn host_step(c: &Constants, u: &Variables, v: &Variables, host_id: int, net_op: NetworkOperation, event: Event) -> bool
+    pub open spec fn host_step(c: &Constants, u: &Variables, v: &Variables, host_id: int, instance: nat, net_op: NetworkOperation, event: Event) -> bool
     recommends
         u.well_formed(c),
         v.well_formed(c),
     {
         &&& {
             &&& 0 <= host_id < u.hosts.len()
-            &&& host::step(&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id], net_op, event)
+            &&& host::step(&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id], instance, net_op, event)
             &&& forall |i: int| 0 <= i < v.hosts.len() && i != host_id ==> u.hosts[i] == v.hosts[i]
         }
         &&& network::step(&c.network, &u.network, &v.network, net_op)
@@ -81,7 +81,7 @@ verus! {
         &&& u.well_formed(c)
         &&& v.well_formed(c)
         &&& match transition {
-            Transition::HostStep { host_id, net_op } => host_step(c, u, v, host_id, net_op, event)
+            Transition::HostStep { host_id, instance, net_op } => host_step(c, u, v, host_id, instance, net_op, event)
         }
     }
 
