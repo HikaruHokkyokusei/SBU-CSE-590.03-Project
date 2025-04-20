@@ -9,7 +9,7 @@ verus! {
     pub type Value = int;
 
     pub enum Event {
-        Decide { value: Value },
+        Decide { key: nat, value: Value },
         NoOp,
     }
 
@@ -25,12 +25,13 @@ verus! {
         lv.well_formed(lc)
     {
         HighVariables {
-            decided_value: if (exists |i: int| #![auto] 0 <= i < lv.hosts.len() && lv.hosts[i].decide_value.is_some()) {
-                let i = choose |i: int| #![auto] 0 <= i < lv.hosts.len() && lv.hosts[i].decide_value.is_some();
-                lv.hosts[i].decide_value
-            } else {
-                None
-            }
+            decided_value: Map::new(
+                |key: nat| (exists |i: int| #![auto] 0 <= lv.hosts.len() && lv.hosts[i].instances.contains_key(key) && lv.hosts[i].instances[key].decide_value.is_some()),
+                |key: nat| {
+                    let host = choose |i: int| #![auto] 0 <= lv.hosts.len() && lv.hosts[i].instances.contains_key(key) && lv.hosts[i].instances[key].decide_value.is_some();
+                    lv.hosts[host].instances[key].decide_value.unwrap()
+                },
+            )
         }
     }
 }
