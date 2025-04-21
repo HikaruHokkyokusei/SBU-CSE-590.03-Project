@@ -332,6 +332,7 @@ verus! {
         pub open spec fn someone_accepted_implies_network_has_their_accepted_msg(&self, c: &Constants) -> bool {
             forall |i: int, instance: nat, ballot: host::Ballot, sender: nat| #![auto]
                 0 <= i < self.hosts.len() &&
+                self.hosts[i].instances.contains_key(instance) &&
                 self.hosts[i].instances[instance].accepted.contains_key(ballot) &&
                 self.hosts[i].instances[instance].accepted[ballot].contains(sender) ==>
                 self.network.in_flight_messages.contains(Message::Accepted { key: instance, sender, ballot })
@@ -494,6 +495,28 @@ verus! {
                 self.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
                 self.network.in_flight_messages.contains(Message::Decide { ballot: b2, value: v2 }) ==>
                 v1 == v2
+        }
+
+        pub proof fn network_msgs_have_valid_sender_and_ballot_pid_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
+        requires
+            inductive(c, u),
+            next(c, u, self, event),
+        ensures
+            self.network_msgs_have_valid_sender_and_ballot_pid(c),
+        {
+            assert(self.all_maps_and_sets_are_finite(c));
+            assert(self.network.in_flight_messages.finite());
+
+            let Transition::HostStep { host_id, instance, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
+
+            assert forall |key:nat, sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                    self.network.in_flight_messages.contains(Message::Promise { key, sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) implies
+                    ballot.num > 0 && 0 <= accepted_ballot.pid < self.hosts.len()
+            by {
+                assert(self.network.in_flight_messages.contains(Message::Accepted { key, sender, ballot: accepted_ballot }));
+                assert(accepted_ballot.pid < self.hosts.len());
+            };
         }
 
         pub proof fn value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot_is_inductive(&self, c: &Constants, u: &Variables, event: Event)

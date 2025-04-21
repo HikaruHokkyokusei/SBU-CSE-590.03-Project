@@ -38,8 +38,9 @@ verus! {
                 v.decided_state_implies_network_has_decide_message_is_inductive(c, u, event);
             };
             assert(properties_of_valid_messages_in_network(c, v)) by {
-                v.accepted_msg_in_network_implies_network_has_corresponding_accept_msg_is_inductive(c, u, event);
+                v.network_msgs_have_valid_sender_and_ballot_pid_is_inductive(c, u, event);
                 v.value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot_is_inductive(c, u, event);
+                v.accepted_msg_in_network_implies_network_has_corresponding_accept_msg_is_inductive(c, u, event);
                 v.all_decide_messages_hold_same_value_is_inductive(c, u, event);
             };
             assert(properties_of_valid_host_states(c, v)) by {
