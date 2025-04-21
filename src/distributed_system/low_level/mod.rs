@@ -100,79 +100,114 @@ verus! {
 
     impl Variables {
         pub open spec fn all_maps_and_sets_are_finite(&self, c: &Constants) -> bool {
-            &&& forall |i: int| #![auto]
-                    0 <= i < self.hosts.len() ==>
-                    self.hosts[i].promised.dom().finite() &&
-                    self.hosts[i].proposed_value.dom().finite() &&
-                    self.hosts[i].accepted.dom().finite()
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+            &&& forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> self.hosts[i].instances.dom().finite()
+            &&& forall |i: int, instance: nat| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].promised.contains_key(ballot) ==>
-                    self.hosts[i].promised[ballot].dom().finite() &&
-                    0 <= self.hosts[i].promised[ballot].len() <= c.num_hosts
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+                    self.hosts[i].instances.contains_key(instance) ==>
+                    self.hosts[i].instances[instance].promised.dom().finite() &&
+                    self.hosts[i].instances[instance].proposed_value.dom().finite() &&
+                    self.hosts[i].instances[instance].accepted.dom().finite()
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].accepted.contains_key(ballot) ==>
-                    self.hosts[i].accepted[ballot].finite() &&
-                    0 <= self.hosts[i].accepted[ballot].len() <= c.num_hosts
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].promised.contains_key(ballot) ==>
+                    self.hosts[i].instances[instance].promised[ballot].dom().finite()
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].accepted.contains_key(ballot) ==>
+                    self.hosts[i].instances[instance].accepted[ballot].finite()
+        }
+
+        pub open spec fn all_map_keys_and_set_values_are_valid(&self, c: &Constants) -> bool {
+            &&& forall |i: int, instance: nat, ballot: host::Ballot, sender: nat| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].promised.contains_key(ballot) &&
+                    self.hosts[i].instances[instance].promised[ballot].contains_key(sender) ==>
+                    0 <= sender < c.num_hosts
+            &&& forall |i: int, instance: nat, ballot: host::Ballot, sender: nat| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].accepted.contains_key(ballot) &&
+                    self.hosts[i].instances[instance].accepted[ballot].contains(sender) ==>
+                    0 <= sender < c.num_hosts
+        }
+
+        pub open spec fn all_map_and_set_sizes_are_bounded(&self, c: &Constants) -> bool {
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].promised.contains_key(ballot) ==>
+                    0 <= self.hosts[i].instances[instance].promised[ballot].len() <= c.num_hosts
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
+                    0 <= i < self.hosts.len() &&
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].accepted.contains_key(ballot) ==>
+                    0 <= self.hosts[i].instances[instance].accepted[ballot].len() <= c.num_hosts
         }
 
         pub open spec fn all_ballot_pids_in_all_maps_correspond_to_respective_host_id(&self, c: &Constants) -> bool {
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].promised.contains_key(ballot) ==>
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].promised.contains_key(ballot) ==>
                     ballot.pid == c.hosts[i].id
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].proposed_value.contains_key(ballot) ==>
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].proposed_value.contains_key(ballot) ==>
                     ballot.pid == c.hosts[i].id
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].accepted.contains_key(ballot) ==>
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].accepted.contains_key(ballot) ==>
                     ballot.pid == c.hosts[i].id
         }
 
-        pub proof fn all_maps_and_sets_are_finite_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
+        pub proof fn all_map_and_set_sizes_are_bounded_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
         requires
             inductive(c, u),
             next(c, u, self, event),
         ensures
-            self.all_maps_and_sets_are_finite(c),
+            self.all_map_and_set_sizes_are_bounded(c),
         {
             assert(u.all_maps_and_sets_are_finite(c));
             assert(self.network.in_flight_messages.finite());
 
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let Transition::HostStep { host_id, instance, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |i: int, ballot: host::Ballot| #![auto]
+            assert forall |i: int, key: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].promised.contains_key(ballot) implies
-                    0 <= self.hosts[i].promised[ballot].len() <= c.num_hosts
+                    self.hosts[i].instances.contains_key(key) &&
+                    self.hosts[i].instances[key].promised.contains_key(ballot) implies
+                    0 <= self.hosts[i].instances[key].promised[ballot].len() <= c.num_hosts
             by {
-                assert(forall |sender: nat| #[trigger] self.hosts[i].promised[ballot].contains_key(sender) ==> 0 <= sender < c.num_hosts);
-
+                assert(forall |sender: nat| #[trigger] self.hosts[i].instances[key].promised[ballot].contains_key(sender) ==> 0 <= sender < c.num_hosts);
                 let full_set = Set::new(|x: nat| 0 <= x < c.num_hosts);
                 assert(full_set.finite() && full_set.len() == c.num_hosts) by { full_set_size(full_set, c.num_hosts); };
-                assert(self.hosts[i].promised[ballot].len() <= c.num_hosts) by { lemma_len_subset(self.hosts[i].promised[ballot].dom(), full_set); };
+                assert(self.hosts[i].instances[key].promised[ballot].len() <= c.num_hosts) by { lemma_len_subset(self.hosts[i].instances[key].promised[ballot].dom(), full_set); };
             };
 
-            assert forall |i: int, ballot: host::Ballot| #![auto]
+            assert forall |i: int, key: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].accepted.contains_key(ballot) implies
-                    0 <= self.hosts[i].accepted[ballot].len() <= c.num_hosts
+                    self.hosts[i].instances.contains_key(key) &&
+                    self.hosts[i].instances[key].accepted.contains_key(ballot) implies
+                    0 <= self.hosts[i].instances[key].accepted[ballot].len() <= c.num_hosts
             by {
-                assert(forall |sender: nat| #[trigger] self.hosts[i].accepted[ballot].contains(sender) ==> 0 <= sender < c.num_hosts);
-
+                assert(forall |sender: nat| #[trigger] self.hosts[i].instances[key].accepted[ballot].contains(sender) ==> 0 <= sender < c.num_hosts);
                 let full_set = Set::new(|x: nat| 0 <= x < c.num_hosts);
                 assert(full_set.finite() && full_set.len() == c.num_hosts) by { full_set_size(full_set, c.num_hosts); };
-                assert(self.hosts[i].accepted[ballot].len() <= c.num_hosts) by { lemma_len_subset(self.hosts[i].accepted[ballot], full_set); };
+                assert(self.hosts[i].instances[key].accepted[ballot].len() <= c.num_hosts) by { lemma_len_subset(self.hosts[i].instances[key].accepted[ballot], full_set); };
             };
         }
     }
 
     pub open spec fn host_map_properties(c: &Constants, u: &Variables) -> bool {
         &&& u.all_maps_and_sets_are_finite(c)
+        &&& u.all_map_keys_and_set_values_are_valid(c)
+        &&& u.all_map_and_set_sizes_are_bounded(c)
         &&& u.all_ballot_pids_in_all_maps_correspond_to_respective_host_id(c)
     }
 

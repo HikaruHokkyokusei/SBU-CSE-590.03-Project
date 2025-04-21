@@ -31,7 +31,7 @@ verus! {
     {
         assert(inductive(c, v)) by {
             assert(v.network.in_flight_messages.finite());
-            assert(host_map_properties(c, v)) by { v.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(host_map_properties(c, v)) by { v.all_map_and_set_sizes_are_bounded_is_inductive(c, u, event); };
             assert(messages_in_network_implies_first_degree_properties(c, v));
             assert(properties_imply_first_degree_messages_in_network(c, v)) by {
                 v.accepted_state_implies_network_has_accept_message_is_inductive(c, u, event);
