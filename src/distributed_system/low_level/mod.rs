@@ -178,57 +178,62 @@ verus! {
 
     impl Variables {
         pub open spec fn prepare_msg_in_network_implies_sender_map_has_ballot_key(&self, c: &Constants) -> bool {
-            forall |ballot: host::Ballot| #![auto]
-                self.network.in_flight_messages.contains(Message::Prepare { ballot }) ==>
+            forall |key: nat, ballot: host::Ballot| #![auto]
+                self.network.in_flight_messages.contains(Message::Prepare { key, ballot }) ==>
                 {
                     let leader = ballot.pid as int;
 
                     &&& 0 <= leader < self.hosts.len()
-                    &&& self.hosts[leader].promised.contains_key(ballot)
-                    &&& self.hosts[leader].accepted.contains_key(ballot)
+                    &&& self.hosts[leader].instances.contains_key(key)
+                    &&& self.hosts[leader].instances[key].promised.contains_key(ballot)
+                    &&& self.hosts[leader].instances[key].accepted.contains_key(ballot)
                 }
         }
 
         pub open spec fn promise_msg_in_network_implies_sender_has_promised(&self, c: &Constants) -> bool {
-            forall |sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted }) ==>
-                self.hosts[sender as int].current_ballot.cmp(&ballot) >= 0
+            forall |key: nat, sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { key, sender, ballot, accepted }) ==>
+                self.hosts[sender as int].instances.contains_key(key) &&
+                self.hosts[sender as int].instances[key].current_ballot.cmp(&ballot) >= 0
         }
 
         pub open spec fn accept_msg_in_network_implies_quorum_promised_and_value_proposed_by_sender(&self, c: &Constants) -> bool {
-            forall |ballot: host::Ballot, value: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Accept { ballot, value }) ==>
+            forall |key: nat, ballot: host::Ballot, value: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Accept { key, ballot, value }) ==>
                 {
                     let leader = ballot.pid as int;
 
                     &&& 0 <= leader < self.hosts.len()
-                    &&& self.hosts[leader].promised.contains_key(ballot)
-                    &&& self.hosts[leader].promised[ballot].len() > c.num_failures
-                    &&& self.hosts[leader].proposed_value.contains_key(ballot)
-                    &&& self.hosts[leader].proposed_value[ballot] == value
+                    &&& self.hosts[leader].instances.contains_key(key)
+                    &&& self.hosts[leader].instances[key].promised.contains_key(ballot)
+                    &&& self.hosts[leader].instances[key].promised[ballot].len() > c.num_failures
+                    &&& self.hosts[leader].instances[key].proposed_value.contains_key(ballot)
+                    &&& self.hosts[leader].instances[key].proposed_value[ballot] == value
                 }
         }
 
         pub open spec fn accepted_msg_in_network_implies_sender_has_accepted_some_value(&self, c: &Constants) -> bool {
-            forall |sender: nat, ballot: host::Ballot| #![auto]
-                self.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) ==>
-                self.hosts[sender as int].current_ballot.cmp(&ballot) >= 0 &&
-                self.hosts[sender as int].accept_ballot.is_some() &&
-                self.hosts[sender as int].accept_ballot.unwrap().cmp(&ballot) >= 0 &&
-                self.hosts[sender as int].accept_value.is_some()
+            forall |key: nat, sender: nat, ballot: host::Ballot| #![auto]
+                self.network.in_flight_messages.contains(Message::Accepted { key, sender, ballot }) ==>
+                self.hosts[sender as int].instances.contains_key(key) &&
+                self.hosts[sender as int].instances[key].current_ballot.cmp(&ballot) >= 0 &&
+                self.hosts[sender as int].instances[key].accept_ballot.is_some() &&
+                self.hosts[sender as int].instances[key].accept_ballot.unwrap().cmp(&ballot) >= 0 &&
+                self.hosts[sender as int].instances[key].accept_value.is_some()
         }
 
         pub open spec fn decide_msg_in_network_implies_quorum_has_accepted_some_value(&self, c: &Constants) -> bool {
-            forall |ballot: host::Ballot, value: Value|
-                #[trigger] self.network.in_flight_messages.contains(Message::Decide { ballot, value }) ==>
+            forall |key: nat, ballot: host::Ballot, value: Value|
+                #[trigger] self.network.in_flight_messages.contains(Message::Decide { key, ballot, value }) ==>
                 {
                     let leader = ballot.pid as int;
 
                     &&& 0 <= leader < self.hosts.len()
-                    &&& self.hosts[leader].accepted.contains_key(ballot)
-                    &&& self.hosts[leader].accepted[ballot].len() > c.num_failures
-                    &&& self.hosts[leader].proposed_value.contains_key(ballot)
-                    &&& value == self.hosts[leader].proposed_value[ballot]
+                    &&& self.hosts[leader].instances.contains_key(key)
+                    &&& self.hosts[leader].instances[key].accepted.contains_key(ballot)
+                    &&& self.hosts[leader].instances[key].accepted[ballot].len() > c.num_failures
+                    &&& self.hosts[leader].instances[key].proposed_value.contains_key(ballot)
+                    &&& value == self.hosts[leader].instances[key].proposed_value[ballot]
                 }
         }
     }
