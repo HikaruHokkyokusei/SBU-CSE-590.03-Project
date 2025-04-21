@@ -91,11 +91,13 @@ verus! {
 
     pub open spec fn safety(c: &Constants, u: &Variables) -> bool {
         &&& u.well_formed(c)
-        &&& forall |i: int, j: int| #![auto]
+        &&& forall |i: int, j: int, instance: nat| #![auto]
                 0 <= i < j < u.hosts.len() &&
-                u.hosts[i].decide_value.is_some() &&
-                u.hosts[j].decide_value.is_some() ==>
-                u.hosts[i].decide_value == u.hosts[j].decide_value
+                u.hosts[i].instances.contains_key(instance) &&
+                u.hosts[j].instances.contains_key(instance) &&
+                u.hosts[i].instances[instance].decide_value.is_some() &&
+                u.hosts[j].instances[instance].decide_value.is_some() ==>
+                u.hosts[i].instances[instance].decide_value == u.hosts[j].instances[instance].decide_value
     }
 
     impl Variables {
