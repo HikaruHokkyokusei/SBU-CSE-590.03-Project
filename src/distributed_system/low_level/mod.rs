@@ -640,70 +640,79 @@ verus! {
 
     impl Variables {
         pub open spec fn if_host_maps_have_ballot_then_network_has_prepare_msg_with_same_ballot(&self, c: &Constants) -> bool {
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].promised.contains_key(ballot) ==>
-                    self.network.in_flight_messages.contains(Message::Prepare { ballot })
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].promised.contains_key(ballot) ==>
+                    self.network.in_flight_messages.contains(Message::Prepare { key: instance, ballot })
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].proposed_value.contains_key(ballot) ==>
-                    self.network.in_flight_messages.contains(Message::Prepare { ballot })
-            &&& forall |i: int, ballot: host::Ballot| #![auto]
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].proposed_value.contains_key(ballot) ==>
+                    self.network.in_flight_messages.contains(Message::Prepare { key: instance, ballot })
+            &&& forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                     0 <= i < self.hosts.len() &&
-                    self.hosts[i].accepted.contains_key(ballot) ==>
-                    self.network.in_flight_messages.contains(Message::Prepare { ballot })
+                    self.hosts[i].instances.contains_key(instance) &&
+                    self.hosts[i].instances[instance].accepted.contains_key(ballot) ==>
+                    self.network.in_flight_messages.contains(Message::Prepare { key: instance, ballot })
         }
 
-        pub open spec fn proposed_some_value_and_get_max_accepted_value_is_some(&self, i: int, ballot: host::Ballot) -> bool {
-            &&& self.hosts[i].proposed_value.contains_key(ballot)
-            &&& host::get_max_accepted_value(self.hosts[i].promised[ballot]).is_some()
+        pub open spec fn proposed_some_value_and_get_max_accepted_value_is_some(&self, i: int, instance: nat, ballot: host::Ballot) -> bool {
+            &&& self.hosts[i].instances.contains_key(instance)
+            &&& self.hosts[i].instances[instance].proposed_value.contains_key(ballot)
+            &&& host::get_max_accepted_value(self.hosts[i].instances[instance].promised[ballot]).is_some()
         }
 
         pub open spec fn if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(&self, c: &Constants) -> bool {
-            forall |i: int, ballot: host::Ballot|
+            forall |i: int, instance: nat, ballot: host::Ballot|
                 0 <= i < self.hosts.len() &&
-                #[trigger] self.proposed_some_value_and_get_max_accepted_value_is_some(i, ballot) ==>
-                self.hosts[i].proposed_value[ballot] == host::get_max_accepted_value(self.hosts[i].promised[ballot]).unwrap().1
+                #[trigger] self.proposed_some_value_and_get_max_accepted_value_is_some(i, instance, ballot) ==>
+                self.hosts[i].instances[instance].proposed_value[ballot] == host::get_max_accepted_value(self.hosts[i].instances[instance].promised[ballot]).unwrap().1
         }
 
         pub open spec fn host_accept_ballot_is_none_or_leq_to_current_ballot(&self, c: &Constants) -> bool {
-            forall |i: int| #![auto]
+            forall |i: int, instance: nat| #![auto]
                 0 <= i < self.hosts.len() &&
-                self.hosts[i].accept_ballot.is_some() ==>
-                self.hosts[i].accept_ballot.unwrap().cmp(&self.hosts[i].current_ballot) <= 0
+                self.hosts[i].instances.contains_key(instance) &&
+                self.hosts[i].instances[instance].accept_ballot.is_some() ==>
+                self.hosts[i].instances[instance].accept_ballot.unwrap().cmp(&self.hosts[i].instances[instance].current_ballot) <= 0
         }
 
-        pub open spec fn hosts_have_same_some_accept_ballot(&self, h1: int, h2: int) -> bool {
-            &&& self.hosts[h1].accept_ballot.is_some()
-            &&& self.hosts[h1].accept_ballot == self.hosts[h2].accept_ballot
+        pub open spec fn hosts_have_same_some_accept_ballot(&self, h1: int, h2: int, instance: nat) -> bool {
+            &&& self.hosts[h1].instances[instance].accept_ballot.is_some()
+            &&& self.hosts[h1].instances[instance].accept_ballot == self.hosts[h2].instances[instance].accept_ballot
         }
 
-        pub open spec fn hosts_have_same_some_accept_value(&self, h1: int, h2: int) -> bool {
-            &&& self.hosts[h1].accept_value.is_some()
-            &&& self.hosts[h1].accept_value == self.hosts[h2].accept_value
+        pub open spec fn hosts_have_same_some_accept_value(&self, h1: int, h2: int, instance: nat) -> bool {
+            &&& self.hosts[h1].instances[instance].accept_value.is_some()
+            &&& self.hosts[h1].instances[instance].accept_value == self.hosts[h2].instances[instance].accept_value
         }
 
         pub open spec fn any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value(&self, c: &Constants) -> bool {
-            forall |h1: int, h2: int|
+            forall |h1: int, h2: int, instance: nat|
                 0 <= h1 < self.hosts.len() &&
                 0 <= h2 < self.hosts.len() &&
-                #[trigger] self.hosts_have_same_some_accept_ballot(h1, h2) ==>
-                self.hosts_have_same_some_accept_value(h1, h2)
+                self.hosts[h1].instances.contains_key(instance) &&
+                self.hosts[h2].instances.contains_key(instance) &&
+                #[trigger] self.hosts_have_same_some_accept_ballot(h1, h2, instance) ==>
+                self.hosts_have_same_some_accept_value(h1, h2, instance)
         }
 
         pub open spec fn if_someone_has_accepted_then_someone_has_proposed(&self, c: &Constants) -> bool {
-            forall |i: int, ballot: host::Ballot| #![auto]
+            forall |i: int, instance: nat, ballot: host::Ballot| #![auto]
                 0 <= i < self.hosts.len() &&
-                self.hosts[i].accepted.contains_key(ballot) &&
-                self.hosts[i].accepted[ballot].len() > 0 ==>
-                self.hosts[i].proposed_value.contains_key(ballot)
+                self.hosts[i].instances.contains_key(instance) &&
+                self.hosts[i].instances[instance].accepted.contains_key(ballot) &&
+                self.hosts[i].instances[instance].accepted[ballot].len() > 0 ==>
+                self.hosts[i].instances[instance].proposed_value.contains_key(ballot)
         }
 
         pub open spec fn same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(&self, c: &Constants) -> bool {
-            forall |i: int, ballot: host::Ballot|
+            forall |i: int, instance: nat, ballot: host::Ballot|
                 0 <= i < self.hosts.len() &&
-                self.hosts[i].promised.contains_key(ballot) ==>
-                #[trigger] host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(self.hosts[i].promised[ballot])
+                self.hosts[i].instances.contains_key(instance) &&
+                self.hosts[i].instances[instance].promised.contains_key(ballot) ==>
+                #[trigger] host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(self.hosts[i].instances[instance].promised[ballot])
         }
 
         pub proof fn if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(&self, c: &Constants, u: &Variables, event: Event)
@@ -713,18 +722,19 @@ verus! {
         ensures
             self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c),
         {
-            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(host_map_properties(c, self)) by { self.all_map_and_set_sizes_are_bounded_is_inductive(c, u, event); };
 
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let Transition::HostStep { host_id, instance: step_key, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |i: int, ballot: host::Ballot|
+            assert forall |i: int, instance: nat, ballot: host::Ballot|
             0 <= i < self.hosts.len() &&
-            #[trigger] self.proposed_some_value_and_get_max_accepted_value_is_some(i, ballot) implies
-            self.hosts[i].proposed_value[ballot] == host::get_max_accepted_value(self.hosts[i].promised[ballot]).unwrap().1
+            self.hosts[i].instances.contains_key(instance) &&
+            #[trigger] self.proposed_some_value_and_get_max_accepted_value_is_some(i, instance, ballot) implies
+            self.hosts[i].instances[instance].proposed_value[ballot] == host::get_max_accepted_value(self.hosts[i].instances[instance].promised[ballot]).unwrap().1
             by {
-                if ((i != host_id) || u.hosts[i].proposed_value.contains_key(ballot)) {
-                    assert(u.proposed_some_value_and_get_max_accepted_value_is_some(i, ballot));
+                if ((i != host_id) || u.hosts[i].instances[instance].proposed_value.contains_key(ballot)) {
+                    assert(u.proposed_some_value_and_get_max_accepted_value_is_some(i, instance, ballot));
                 }
             };
         }
@@ -736,26 +746,28 @@ verus! {
         ensures
             self.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value(c),
         {
-            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(host_map_properties(c, self)) by { self.all_map_and_set_sizes_are_bounded_is_inductive(c, u, event); };
 
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let Transition::HostStep { host_id, instance: step_key, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |h1: int, h2: int|
+            assert forall |h1: int, h2: int, instance: nat|
                 0 <= h1 < self.hosts.len() &&
                 0 <= h2 < self.hosts.len() &&
-                #[trigger] self.hosts_have_same_some_accept_ballot(h1, h2) implies
-                self.hosts_have_same_some_accept_value(h1, h2)
+                self.hosts[h1].instances.contains_key(instance) &&
+                self.hosts[h2].instances.contains_key(instance) &&
+                #[trigger] self.hosts_have_same_some_accept_ballot(h1, h2, instance) implies
+                self.hosts_have_same_some_accept_value(h1, h2, instance)
             by {
-                assert(self.hosts[h1].accept_ballot.is_some() && self.hosts[h2].accept_ballot.is_some());
-                assert(self.hosts[h1].accept_ballot == self.hosts[h2].accept_ballot);
+                assert(self.hosts[h1].instances[instance].accept_ballot.is_some() && self.hosts[h2].instances[instance].accept_ballot.is_some());
+                assert(self.hosts[h1].instances[instance].accept_ballot == self.hosts[h2].instances[instance].accept_ballot);
 
                 self.accepted_state_implies_network_has_accept_message_is_inductive(c, u, event);
 
-                assert(self.either_of_accept_ballot_or_value_is_some(h1));
-                assert(self.network.in_flight_messages.contains(Message::Accept { ballot: self.hosts[h1].accept_ballot.unwrap(), value: self.hosts[h1].accept_value.unwrap() }));
-                assert(self.either_of_accept_ballot_or_value_is_some(h2));
-                assert(self.network.in_flight_messages.contains(Message::Accept { ballot: self.hosts[h2].accept_ballot.unwrap(), value: self.hosts[h2].accept_value.unwrap() }));
+                assert(self.either_of_accept_ballot_or_value_is_some(h1, instance));
+                assert(self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot: self.hosts[h1].instances[instance].accept_ballot.unwrap(), value: self.hosts[h1].instances[instance].accept_value.unwrap() }));
+                assert(self.either_of_accept_ballot_or_value_is_some(h2, instance));
+                assert(self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot: self.hosts[h2].instances[instance].accept_ballot.unwrap(), value: self.hosts[h2].instances[instance].accept_value.unwrap() }));
             };
         }
     }
