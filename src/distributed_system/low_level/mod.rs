@@ -412,72 +412,71 @@ verus! {
 
     impl Variables {
         pub open spec fn network_msgs_have_valid_sender_and_ballot_pid(&self, c: &Constants) -> bool {
-            &&& forall |ballot: host::Ballot| #![auto]
-                    self.network.in_flight_messages.contains(Message::Prepare { ballot }) ==>
-                    0 <= ballot.pid < self.hosts.len()
-            &&& forall |sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
-                    self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted }) ==>
-                    0 <= sender < self.hosts.len() &&
-                    0 <= ballot.pid < self.hosts.len()
-            &&& forall |sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
-                    self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
-                    0 <= accepted_ballot.pid < self.hosts.len()
-            &&& forall |ballot: host::Ballot, value: Value| #![auto]
-                    self.network.in_flight_messages.contains(Message::Accept { ballot, value }) ==>
-                    0 <= ballot.pid < self.hosts.len()
-            &&& forall |sender: nat, ballot: host::Ballot| #![auto]
-                    self.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) ==>
-                    0 <= sender < self.hosts.len() &&
-                    0 <= ballot.pid < self.hosts.len()
-            &&& forall |ballot: host::Ballot, value: Value| #![auto]
-                    self.network.in_flight_messages.contains(Message::Decide { ballot, value }) ==>
+            &&& forall |key: nat, ballot: host::Ballot| #![auto]
+                    self.network.in_flight_messages.contains(Message::Prepare { key, ballot }) ==>
+                    ballot.num > 0 && 0 <= ballot.pid < self.hosts.len()
+            &&& forall |key:nat, sender: nat, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+                    self.network.in_flight_messages.contains(Message::Promise { key, sender, ballot, accepted }) ==>
+                    ballot.num > 0 && 0 <= sender < self.hosts.len() && ballot.num > 0 && 0 <= ballot.pid < self.hosts.len()
+            &&& forall |key:nat, sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                    self.network.in_flight_messages.contains(Message::Promise { key, sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
+                    ballot.num > 0 && 0 <= accepted_ballot.pid < self.hosts.len()
+            &&& forall |key:nat, ballot: host::Ballot, value: Value| #![auto]
+                    self.network.in_flight_messages.contains(Message::Accept { key, ballot, value }) ==>
+                    ballot.num > 0 && 0 <= ballot.pid < self.hosts.len()
+            &&& forall |key:nat, sender: nat, ballot: host::Ballot| #![auto]
+                    self.network.in_flight_messages.contains(Message::Accepted { key, sender, ballot }) ==>
+                    ballot.num > 0 && 0 <= sender < self.hosts.len() && ballot.num > 0 && 0 <= ballot.pid < self.hosts.len()
+            &&& forall |key:nat, ballot: host::Ballot, value: Value| #![auto]
+                    ballot.num > 0 && self.network.in_flight_messages.contains(Message::Decide { key, ballot, value }) ==>
                     0 <= ballot.pid < self.hosts.len()
         }
 
         pub open spec fn promise_msgs_from_same_sender_for_same_ballot_have_same_accepted(&self, c: &Constants) -> bool {
-            forall |sender: nat, b1: host::Ballot, a1: Option<(host::Ballot, Value)>, b2: host::Ballot, a2: Option<(host::Ballot, Value)>| #![auto]
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot: b1, accepted: a1 }) &&
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot: b2, accepted: a2 }) &&
+            forall |sender: nat, instance: nat, b1: host::Ballot, a1: Option<(host::Ballot, Value)>, b2: host::Ballot, a2: Option<(host::Ballot, Value)>| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot: b1, accepted: a1 }) &&
+                self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot: b2, accepted: a2 }) &&
                 b1 == b2 ==>
                 a1 == a2
         }
 
         pub open spec fn ballot_in_accepted_is_smaller_than_promise_message_ballot(&self, c: &Constants) -> bool {
-            forall |sender: nat, promise_ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot: promise_ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
+            forall |sender: nat, instance: nat, promise_ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot: promise_ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
                 accepted_ballot.cmp(&promise_ballot) < 0
         }
 
         pub open spec fn value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot(&self, c: &Constants) -> bool {
-            forall |sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
+            forall |sender: nat, instance: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
                 {
                     let leader = accepted_ballot.pid as int;
 
                     &&& 0 <= leader < self.hosts.len()
-                    &&& self.hosts[leader].proposed_value.contains_key(accepted_ballot)
-                    &&& accepted_value == self.hosts[leader].proposed_value[accepted_ballot]
+                    &&& self.hosts[leader].instances.contains_key(instance)
+                    &&& self.hosts[leader].instances[instance].proposed_value.contains_key(accepted_ballot)
+                    &&& accepted_value == self.hosts[leader].instances[instance].proposed_value[accepted_ballot]
                 }
         }
 
         pub open spec fn if_accepted_is_some_in_promise_message_then_network_has_corresponding_old_accepted_message(&self, c: &Constants) -> bool {
-            forall |sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
-                self.network.in_flight_messages.contains(Message::Accepted { sender, ballot: accepted_ballot })
+            forall |sender: nat, instance: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) ==>
+                self.network.in_flight_messages.contains(Message::Accepted { key: instance, sender, ballot: accepted_ballot })
         }
 
         pub open spec fn network_has_at_most_one_accept_message_for_any_ballot(&self, c: &Constants) -> bool {
-            forall |ballot: host::Ballot, v1: Value, v2: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Accept { ballot, value: v1 }) &&
-                self.network.in_flight_messages.contains(Message::Accept { ballot, value: v2 }) ==>
+            forall |instance: nat, ballot: host::Ballot, v1: Value, v2: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value: v1 }) &&
+                self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value: v2 }) ==>
                 v1 == v2
         }
 
         pub open spec fn accepted_msg_in_network_implies_future_promises_of_same_sender_have_some_accepted(&self, c: &Constants) -> bool {
-            forall |sender: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
-                self.network.in_flight_messages.contains(Message::Accepted { sender, ballot: accepted_ballot }) &&
+            forall |sender: nat, instance: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot, accepted: Option<(host::Ballot, Value)>| #![auto]
+                self.network.in_flight_messages.contains(Message::Accepted { key: instance, sender, ballot: accepted_ballot }) &&
                 future_ballot.cmp(&accepted_ballot) > 0 &&
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot: future_ballot, accepted }) ==>
+                self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot: future_ballot, accepted }) ==>
                 {
                     &&& accepted.is_some()
                     &&& accepted.unwrap().0.cmp(&accepted_ballot) >= 0
@@ -485,9 +484,9 @@ verus! {
         }
 
         pub open spec fn accepted_msg_in_network_implies_network_has_corresponding_accept_msg(&self, c: &Constants) -> bool {
-            forall |sender: nat, ballot: host::Ballot| #![auto]
-                self.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) ==>
-                (exists |value: Value| #![auto] self.network.in_flight_messages.contains(Message::Accept { ballot, value }))
+            forall |sender: nat, instance: nat, ballot: host::Ballot| #![auto]
+                self.network.in_flight_messages.contains(Message::Accepted { key: instance, sender, ballot }) ==>
+                (exists |value: Value| #![auto] self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value }))
         }
 
         pub open spec fn all_decide_messages_hold_same_value(&self, c: &Constants) -> bool {
@@ -504,36 +503,40 @@ verus! {
         ensures
             self.value_in_accepted_of_promise_is_same_as_proposed_value_for_corresponding_ballot(c),
         {
-            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(host_map_properties(c, self)) by { self.all_map_and_set_sizes_are_bounded_is_inductive(c, u, event); };
             assert(self.if_accepted_is_some_in_promise_message_then_network_has_corresponding_old_accepted_message(c));
 
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let Transition::HostStep { host_id, instance: step_key, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |sender: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Promise { sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) implies
+            assert forall |sender: nat, instance: nat, ballot: host::Ballot, accepted_ballot: host::Ballot, accepted_value: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot, accepted: Some((accepted_ballot, accepted_value)) }) implies
                 {
                     let leader = accepted_ballot.pid as int;
 
                     &&& 0 <= leader < self.hosts.len()
-                    &&& self.hosts[leader].proposed_value.contains_key(accepted_ballot)
-                    &&& accepted_value == self.hosts[leader].proposed_value[accepted_ballot]
+                    &&& self.hosts[leader].instances.contains_key(instance)
+                    &&& self.hosts[leader].instances[instance].proposed_value.contains_key(accepted_ballot)
+                    &&& accepted_value == self.hosts[leader].instances[instance].proposed_value[accepted_ballot]
                 }
             by {
-                let leader = accepted_ballot.pid as int;
-                assert(0 <= leader < self.hosts.len());
-                assert(self.hosts[leader].proposed_value.contains_key(accepted_ballot));
+                if (instance == step_key) {
+                    let leader = accepted_ballot.pid as int;
+                    assert(0 <= leader < self.hosts.len());
+                    assert(self.hosts[leader].instances[instance].proposed_value.contains_key(accepted_ballot));
 
-                match ((event, net_op.recv, net_op.send)) {
-                    (Event::NoOp, Some(Message::Prepare { ballot: prepare_ballot }), Some(Message::Promise { sender, ballot: promise_ballot, accepted }))
-                    if (host::promise(lc, lu, lv, net_op) && (sender == host_id) && (promise_ballot == prepare_ballot) && accepted.is_some() && (accepted == Some((accepted_ballot, accepted_value)))) => {
-                        assert(self.either_of_accept_ballot_or_value_is_some(sender as int));
-                        assert(self.network.in_flight_messages.contains(Message::Accept { ballot: lv.accept_ballot.unwrap(), value: lv.accept_value.unwrap() })) by {
-                            self.accepted_state_implies_network_has_accept_message_is_inductive(c, u, event);
-                        };
-                        assert(accepted_value == self.hosts[leader].proposed_value[accepted_ballot]);
-                    },
-                    _ => {},
+                    match ((event, net_op.recv, net_op.send)) {
+                        (Event::NoOp, Some(Message::Prepare { key: recv_instance, ballot: prepare_ballot }), Some(Message::Promise { key: send_instance, sender, ballot: promise_ballot, accepted }))
+                        if (host::promise(lc, lu, lv, step_key, net_op) && (sender == host_id) && (promise_ballot == prepare_ballot) && accepted.is_some() && (accepted == Some((accepted_ballot, accepted_value)))) => {
+                            assert(recv_instance == send_instance);
+                            assert(self.either_of_accept_ballot_or_value_is_some(sender as int, instance));
+                            assert(self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot: lv.instances[instance].accept_ballot.unwrap(), value: lv.instances[instance].accept_value.unwrap() })) by {
+                                self.accepted_state_implies_network_has_accept_message_is_inductive(c, u, event);
+                            };
+                            assert(accepted_value == self.hosts[leader].instances[instance].proposed_value[accepted_ballot]);
+                        },
+                        _ => {},
+                    }
                 }
             };
         }
@@ -545,26 +548,28 @@ verus! {
         ensures
             self.accepted_msg_in_network_implies_network_has_corresponding_accept_msg(c),
         {
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            assert(host_map_properties(c, self)) by { self.all_map_and_set_sizes_are_bounded_is_inductive(c, u, event); };
+
+            let Transition::HostStep { host_id, instance: step_key, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |sender: nat, ballot: host::Ballot| #![auto]
-                self.network.in_flight_messages.contains(Message::Accepted { sender, ballot }) implies
-                exists |value: Value| #![auto] self.network.in_flight_messages.contains(Message::Accept { ballot, value })
+            assert forall |sender: nat, instance: nat, ballot: host::Ballot| #![auto]
+                self.network.in_flight_messages.contains(Message::Accepted { key: instance, sender, ballot }) implies
+                exists |value: Value| #![auto] self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value })
             by {
                 match (event) {
                     Event::NoOp => {
-                        let condition = host::send_prepare(lc, lu, lv, net_op) ||
-                            host::send_decide(lc, lu, lv, net_op) ||
-                            host::promise(lc, lu, lv, net_op) ||
-                            host::accept(lc, lu, lv, net_op) ||
-                            host::send_accept(lc, lu, lv, net_op);
+                        let condition = host::send_prepare(lc, lu, lv, step_key, net_op) ||
+                            host::send_decide(lc, lu, lv, step_key, net_op) ||
+                            host::promise(lc, lu, lv, step_key, net_op) ||
+                            host::accept(lc, lu, lv, step_key, net_op) ||
+                            host::send_accept(lc, lu, lv, step_key, net_op);
 
                         if (condition) {
-                            assert(exists |value: Value| #![auto] self.network.in_flight_messages.contains(Message::Accept { ballot, value })) by {
-                                assert(exists |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { ballot, value }));
-                                let existing_value = choose |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { ballot, value });
-                                assert(self.network.in_flight_messages.contains(Message::Accept { ballot, value: existing_value }));
+                            assert(exists |value: Value| #![auto] self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value })) by {
+                                assert(exists |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value }));
+                                let existing_value = choose |value: Value| #![auto] u.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value });
+                                assert(self.network.in_flight_messages.contains(Message::Accept { key: instance, ballot, value: existing_value }));
                             };
                         }
                     },
