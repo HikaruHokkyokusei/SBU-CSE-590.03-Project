@@ -34,6 +34,7 @@ verus! {
             assert(host_map_properties(c, v)) by { v.all_map_and_set_sizes_are_bounded_is_inductive(c, u, event); };
             assert(messages_in_network_implies_first_degree_properties(c, v));
             assert(properties_imply_first_degree_messages_in_network(c, v)) by {
+                v.if_accept_ballot_is_some_then_accept_value_is_some_is_inductive(c, u, event);
                 v.accepted_state_implies_network_has_accept_message_is_inductive(c, u, event);
                 v.decided_state_implies_network_has_decide_message_is_inductive(c, u, event);
             };
@@ -46,6 +47,7 @@ verus! {
             assert(properties_of_valid_host_states(c, v)) by {
                 v.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event);
                 v.any_two_hosts_with_some_same_accept_ballot_have_some_same_accept_value_is_inductive(c, u, event);
+                v.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts_is_inductive(c, u, event);
             };
             assert(system_quorum_properties(c, v)) by {
                 v.if_host_proposed_then_quorum_has_promised_is_inductive(c, u, event);
