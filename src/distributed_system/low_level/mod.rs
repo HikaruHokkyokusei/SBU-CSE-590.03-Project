@@ -959,6 +959,7 @@ verus! {
                 0 <= i < self.hosts.len() &&
                 self.hosts[i].instances.contains_key(instance) &&
                 0 <= future_ballot.pid < self.hosts.len() &&
+                self.hosts[future_ballot.pid as int].instances.contains_key(instance) &&
                 #[trigger] map_contains_key_with_min_len_and_map_contains_key(self.hosts[i].instances[instance].accepted, self.hosts[future_ballot.pid as int].instances[instance].proposed_value, accepted_ballot, future_ballot, c.num_failures) &&
                 future_ballot.cmp(&accepted_ballot) >= 0 ==>
                 self.hosts[future_ballot.pid as int].instances[instance].proposed_value[future_ballot] == self.hosts[i].instances[instance].proposed_value[accepted_ballot]
@@ -1035,47 +1036,48 @@ verus! {
             }
         }
 
-        pub proof fn accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(&self, c: &Constants, u: &Variables, h1: int, instance: nat, sender: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot)
+        pub proof fn accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(&self, c: &Constants, u: &Variables, h1: int, key: nat, sender: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot)
         requires
             inductive(c, u),
             next(c, u, self, Event::NoOp),
-            host_step(c, u, self, h1, instance, NetworkOperation { recv: Some(Message::Accepted { key: instance, sender, ballot: accepted_ballot }), send: None }, Event::NoOp),
+            host_step(c, u, self, h1, key, NetworkOperation { recv: Some(Message::Accepted { key, sender, ballot: accepted_ballot }), send: None }, Event::NoOp),
             host::accepted(
                 &c.hosts[h1],
                 &u.hosts[h1],
                 &self.hosts[h1],
-                instance,
-                NetworkOperation { recv: Some(Message::Accepted { key: instance, sender, ballot: accepted_ballot }), send: None }
+                key,
+                NetworkOperation { recv: Some(Message::Accepted { key, sender, ballot: accepted_ballot }), send: None }
             ),
-            network::step(&c.network, &u.network, &self.network, NetworkOperation { recv: Some(Message::Accepted { key: instance, sender, ballot: accepted_ballot }), send: None }),
+            network::step(&c.network, &u.network, &self.network, NetworkOperation { recv: Some(Message::Accepted { key, sender, ballot: accepted_ballot }), send: None }),
             0 <= future_ballot.pid < u.hosts.len(),
             future_ballot.cmp(&accepted_ballot) > 0,
-            u.hosts[future_ballot.pid as int].instances.contains_key(instance),
-            u.hosts[future_ballot.pid as int].instances[instance].promised.contains_key(future_ballot),
-            u.hosts[future_ballot.pid as int].instances[instance].promised[future_ballot].len() > c.num_failures,
-            self.hosts[h1].instances[instance].proposed_value.contains_key(accepted_ballot),
-            self.hosts[h1].instances[instance].accepted.contains_key(accepted_ballot),
-            self.hosts[h1].instances[instance].accepted[accepted_ballot].len() > c.num_failures,
+            u.hosts[future_ballot.pid as int].instances.contains_key(key),
+            u.hosts[future_ballot.pid as int].instances[key].promised.contains_key(future_ballot),
+            u.hosts[future_ballot.pid as int].instances[key].promised[future_ballot].len() > c.num_failures,
+            self.hosts[h1].instances[key].proposed_value.contains_key(accepted_ballot),
+            self.hosts[h1].instances[key].accepted.contains_key(accepted_ballot),
+            self.hosts[h1].instances[key].accepted[accepted_ballot].len() > c.num_failures,
         ensures
             ({
-                let calculated_result = host::get_max_accepted_value(u.hosts[future_ballot.pid as int].instances[instance].promised[future_ballot]);
+                let calculated_result = host::get_max_accepted_value(u.hosts[future_ballot.pid as int].instances[key].promised[future_ballot]);
 
                 &&& calculated_result.is_some()
-                &&& calculated_result.unwrap().1 == self.hosts[h1].instances[instance].proposed_value[accepted_ballot]
+                &&& calculated_result.unwrap().1 == self.hosts[h1].instances[key].proposed_value[accepted_ballot]
             })
         decreases
             future_ballot.num, future_ballot.pid
         {
-            assert(host_map_properties(c, self)) by { self.all_map_and_set_sizes_are_bounded_is_inductive(c, u, Event::NoOp); };
+            self.all_maps_and_sets_are_finite(c);
 
             assert(host::accepted(
                 &c.hosts[h1],
                 &u.hosts[h1],
                 &self.hosts[h1],
-                instance,
-                NetworkOperation { recv: Some(Message::Accepted { key: instance, sender, ballot: accepted_ballot }), send: None }
+                key,
+                NetworkOperation { recv: Some(Message::Accepted { key, sender, ballot: accepted_ballot }), send: None }
             ));
 
+            let instance = key;
             let h2 = future_ballot.pid as int;
             let accepted_map = u.hosts[h2].instances[instance].promised[future_ballot];
 
@@ -1085,6 +1087,7 @@ verus! {
             assert(two_maps_contain_values_with_min_len(self.hosts[h1].instances[instance].accepted, self.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures));
             let common_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value(accepted_map, s) && self.hosts[h1].instances[instance].accepted[accepted_ballot].contains(s);
             let (common_sender_ballot, common_sender_value) = accepted_map[common_sender].unwrap();
+            assert(self.network.in_flight_messages.contains(Message::Promise { key: instance, sender: common_sender, ballot: future_ballot, accepted: self.hosts[h2].instances[instance].promised[future_ballot][common_sender] }));
             assert(common_sender_ballot.cmp(&accepted_ballot) >= 0);
 
             host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(accepted_map);
@@ -1098,7 +1101,13 @@ verus! {
 
             host::get_max_accepted_ballot_corresponds_to_largest_ballot(accepted_map);
             assert(calculated_ballot == largest_sender_ballot);
+
             host::get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(accepted_map);
+            let calculated_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value_same_as_get_max_accepted_value(accepted_map, s);
+            assert(self.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(c));
+            assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map));
+            assert(host::accepted_map_ballots_are_same(accepted_map[calculated_sender].unwrap().0, accepted_map[largest_sender].unwrap().0));
+            assert(accepted_map[calculated_sender] == accepted_map[largest_sender]);
             assert(calculated_value == largest_sender_value);
 
             assert(largest_sender_ballot.cmp(&accepted_ballot) >= 0);
@@ -1106,11 +1115,11 @@ verus! {
             if (largest_sender_ballot == accepted_ballot) {
                 assert(calculated_value == self.hosts[h1].instances[instance].proposed_value[accepted_ballot]);
             } else {
-                assert(self.network.in_flight_messages.contains(Message::Promise { key: instance, sender: largest_sender, ballot: future_ballot, accepted: Some((largest_sender_ballot, largest_sender_value)) }));
+                assert(self.network.in_flight_messages.contains(Message::Promise { key, sender: largest_sender, ballot: future_ballot, accepted: Some((largest_sender_ballot, largest_sender_value)) }));
                 assert(largest_sender_value == self.hosts[largest_sender_ballot.pid as int].instances[instance].proposed_value[largest_sender_ballot]);
 
                 assert(decreases_to!(future_ballot.num, future_ballot.pid => largest_sender_ballot.num, largest_sender_ballot.pid));
-                self.accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(c, u, h1, instance, sender, accepted_ballot, largest_sender_ballot);
+                self.accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(c, u, h1, key, sender, accepted_ballot, largest_sender_ballot);
                 let old_calculated_result = host::get_max_accepted_value(u.hosts[largest_sender_ballot.pid as int].instances[instance].promised[largest_sender_ballot]);
                 assert(old_calculated_result.is_some());
                 let (old_result_ballot, old_result_value) = old_calculated_result.unwrap();
@@ -1131,100 +1140,112 @@ verus! {
         ensures
             self.accepted_system_calculates_same_proposed_value_in_future(c),
         {
-            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(self.all_maps_and_sets_are_finite(c));
             assert(self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c)) by { self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event); };
 
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let Transition::HostStep { host_id, instance: step_key, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |h1: int, h2: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+            assert forall |h1: int, h2: int, instance: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
                 0 <= h1 < self.hosts.len() &&
                 0 <= h2 < self.hosts.len() &&
-                #[trigger] two_maps_contain_values_with_min_len(self.hosts[h1].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures) &&
+                self.hosts[h1].instances.contains_key(instance) &&
+                self.hosts[h2].instances.contains_key(instance) &&
+                #[trigger] two_maps_contain_values_with_min_len(self.hosts[h1].instances[instance].accepted, self.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures) &&
                 future_ballot.cmp(&accepted_ballot) > 0 implies
                 {
-                    let old_accepted_value = self.hosts[h1].proposed_value[accepted_ballot];
-                    let calculated_new_proposed = host::get_max_accepted_value(self.hosts[h2].promised[future_ballot]);
+                    let old_accepted_value = self.hosts[h1].instances[instance].proposed_value[accepted_ballot];
+                    let calculated_new_proposed = host::get_max_accepted_value(self.hosts[h2].instances[instance].promised[future_ballot]);
 
                     &&& calculated_new_proposed.is_some()
                     &&& calculated_new_proposed.unwrap().1 == old_accepted_value
                 }
             by {
-                let old_accepted_value = self.hosts[h1].proposed_value[accepted_ballot];
-                assert(old_accepted_value == u.hosts[h1].proposed_value[accepted_ballot]);
-                let calculated_new_proposed = host::get_max_accepted_value(self.hosts[h2].promised[future_ballot]);
+                let old_accepted_value = self.hosts[h1].instances[instance].proposed_value[accepted_ballot];
+                assert(old_accepted_value == u.hosts[h1].instances[instance].proposed_value[accepted_ballot]);
+                let calculated_new_proposed = host::get_max_accepted_value(self.hosts[h2].instances[instance].promised[future_ballot]);
 
                 self.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
-                let common_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value(self.hosts[h2].promised[future_ballot], s) && self.hosts[h1].accepted[accepted_ballot].contains(s);
-                let (common_sender_ballot, common_sender_value) = self.hosts[h2].promised[future_ballot][common_sender].unwrap();
+                let common_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value(self.hosts[h2].instances[instance].promised[future_ballot], s) && self.hosts[h1].instances[instance].accepted[accepted_ballot].contains(s);
+                let (common_sender_ballot, common_sender_value) = self.hosts[h2].instances[instance].promised[future_ballot][common_sender].unwrap();
+                assert(self.network.in_flight_messages.contains(Message::Promise { key: instance, sender: common_sender, ballot: future_ballot, accepted: self.hosts[h2].instances[instance].promised[future_ballot][common_sender] }));
                 assert(common_sender_ballot.cmp(&accepted_ballot) >= 0);
 
-                host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(self.hosts[h2].promised[future_ballot]);
+                host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(self.hosts[h2].instances[instance].promised[future_ballot]);
                 assert(calculated_new_proposed.is_some());
                 let (calculated_ballot, calculated_value) = calculated_new_proposed.unwrap();
 
                 match ((event, net_op.recv, net_op.send)) {
-                    (Event::NoOp, _, Some(Message::Prepare { ballot })) if (host::send_prepare(lc, lu, lv, net_op)) => {
+                    (Event::NoOp, _, Some(Message::Prepare { key: send_key, ballot })) if (host::send_prepare(lc, lu, lv, step_key, net_op) && (instance == step_key)) => {
                         assert(ballot != accepted_ballot);
-                        assert(two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                        assert(two_maps_contain_values_with_min_len(u.hosts[h1].instances[instance].accepted, u.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures));
                         assert(calculated_value == old_accepted_value);
                     },
-                    (Event::NoOp, Some(Message::Promise { sender, ballot, accepted }), _) if (host::promised(lc, lu, lv, net_op) && (h2 == host_id)) => {
+                    (Event::NoOp, Some(Message::Promise { key:recv_key, sender, ballot, accepted }), _) if (host::promised(lc, lu, lv, step_key, net_op) && (h2 == host_id) && (instance == step_key)) => {
                         if (ballot == future_ballot) {
-                            let old_accepted_map = lu.promised[future_ballot];
-                            let new_accepted_map = lu.promised[future_ballot].insert(sender, accepted);
-                            assert(lv.promised[future_ballot] == new_accepted_map);
+                            let old_accepted_map = lu.instances[instance].promised[future_ballot];
+                            let new_accepted_map = lu.instances[instance].promised[future_ballot].insert(sender, accepted);
+                            assert(lv.instances[instance].promised[future_ballot] == new_accepted_map);
                             assert(old_accepted_map.len() >= c.num_failures);
 
-                            assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(new_accepted_map));
+                            assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(new_accepted_map)) by {
+                                self.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts_is_inductive(c, u, event);
+                            };
 
                             if (old_accepted_map.contains_key(sender)) {
+                                assert(self.network.in_flight_messages.contains(Message::Promise { key: instance, sender, ballot: future_ballot, accepted: old_accepted_map[sender] }));
                                 assert(new_accepted_map == old_accepted_map);
-                                assert(two_maps_contain_values_with_min_len(self.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                                assert(two_maps_contain_values_with_min_len(self.hosts[h1].instances[instance].accepted, u.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures));
                                 assert(calculated_value == old_accepted_value);
                             } else {
                                 host::if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(new_accepted_map);
                                 let largest_sender = choose |largest_sender: nat| #[trigger] host::is_largest_accepted_ballot_sender(new_accepted_map, largest_sender);
                                 let (largest_sender_ballot, largest_sender_value) = new_accepted_map[largest_sender].unwrap();
+                                assert(self.network.in_flight_messages.contains(Message::Promise { key: instance, sender: largest_sender, ballot: future_ballot, accepted: new_accepted_map[largest_sender] }));
                                 assert(largest_sender_ballot != ballot);
 
                                 host::get_max_accepted_ballot_corresponds_to_largest_ballot(new_accepted_map);
                                 assert(calculated_ballot == largest_sender_ballot);
+
                                 host::get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(new_accepted_map);
+                                let calculated_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value_same_as_get_max_accepted_value(new_accepted_map, s);
+                                assert(self.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(c));
+                                assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(new_accepted_map));
+                                assert(host::accepted_map_ballots_are_same(new_accepted_map[calculated_sender].unwrap().0, new_accepted_map[largest_sender].unwrap().0));
                                 assert(calculated_value == largest_sender_value);
                                 assert(largest_sender_ballot.cmp(&accepted_ballot) >= 0);
 
                                 let largest_sender_ballot_leader = largest_sender_ballot.pid as int;
-                                assert(largest_sender_value == self.hosts[largest_sender_ballot_leader].proposed_value[largest_sender_ballot]);
+                                assert(largest_sender_value == self.hosts[largest_sender_ballot_leader].instances[instance].proposed_value[largest_sender_ballot]);
 
                                 if (largest_sender_ballot == accepted_ballot) {
                                     assert(calculated_value == old_accepted_value);
                                 } else {
                                     assert(largest_sender_ballot.cmp(&accepted_ballot) > 0);
-                                    assert(two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[largest_sender_ballot_leader].promised, accepted_ballot, largest_sender_ballot, c.num_failures));
-                                    assert(host::get_max_accepted_value(u.hosts[largest_sender_ballot_leader].promised[largest_sender_ballot]).unwrap().1 == old_accepted_value);
-                                    assert(u.proposed_some_value_and_get_max_accepted_value_is_some(largest_sender_ballot_leader, largest_sender_ballot));
-                                    assert(u.hosts[largest_sender_ballot_leader].proposed_value[largest_sender_ballot] == old_accepted_value);
+                                    assert(two_maps_contain_values_with_min_len(u.hosts[h1].instances[instance].accepted, u.hosts[largest_sender_ballot_leader].instances[instance].promised, accepted_ballot, largest_sender_ballot, c.num_failures));
+                                    assert(host::get_max_accepted_value(u.hosts[largest_sender_ballot_leader].instances[instance].promised[largest_sender_ballot]).unwrap().1 == old_accepted_value);
+                                    assert(u.proposed_some_value_and_get_max_accepted_value_is_some(largest_sender_ballot_leader, instance, largest_sender_ballot));
+                                    assert(u.hosts[largest_sender_ballot_leader].instances[instance].proposed_value[largest_sender_ballot] == old_accepted_value);
                                     assert(calculated_value == old_accepted_value);
                                 }
                             }
                         } else {
-                            assert(two_maps_contain_values_with_min_len(u.hosts[h1].accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                            assert(two_maps_contain_values_with_min_len(u.hosts[h1].instances[instance].accepted, u.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures));
                             assert(calculated_value == old_accepted_value);
                         }
                     },
-                    (Event::NoOp, Some(Message::Accepted { sender, ballot }), None) if (host::accepted(lc, lu, lv, net_op) && (h1 == host_id)) => {
-                        assert(self.hosts[h1].proposed_value == u.hosts[h1].proposed_value && self.hosts[h2].proposed_value == u.hosts[h2].proposed_value);
-                        assert(self.hosts[h1].promised == u.hosts[h1].promised && self.hosts[h2].promised == u.hosts[h2].promised);
+                    (Event::NoOp, Some(Message::Accepted { key:recv_key, sender, ballot }), _) if (host::accepted(lc, lu, lv, step_key, net_op) && (h1 == host_id) && (instance == step_key)) => {
+                        assert(self.hosts[h1].instances[instance].proposed_value == u.hosts[h1].instances[instance].proposed_value && self.hosts[h2].instances[instance].proposed_value == u.hosts[h2].instances[instance].proposed_value);
+                        assert(self.hosts[h1].instances[instance].promised == u.hosts[h1].instances[instance].promised && self.hosts[h2].instances[instance].promised == u.hosts[h2].instances[instance].promised);
 
-                        if ((ballot == accepted_ballot) && (lu.accepted[ballot].len() == c.num_failures)) {
+                        if ((ballot == accepted_ballot) && (lu.instances[instance].accepted[ballot].len() == c.num_failures)) {
                             assert(ballot != future_ballot);
 
-                            let old_accepted_hosts = lu.accepted[ballot];
-                            let new_accepted_hosts = lu.accepted[ballot].insert(sender);
-                            assert(lv.accepted[ballot] == new_accepted_hosts);
+                            let old_accepted_hosts = lu.instances[instance].accepted[ballot];
+                            let new_accepted_hosts = lu.instances[instance].accepted[ballot].insert(sender);
+                            assert(lv.instances[instance].accepted[ballot] == new_accepted_hosts);
 
-                            let accepted_map = self.hosts[h2].promised[future_ballot];
+                            let accepted_map = self.hosts[h2].instances[instance].promised[future_ballot];
 
                             assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map));
                             host::if_accepted_map_has_sender_with_value_as_some_then_larget_accepted_ballot_sender_exists(accepted_map);
@@ -1233,13 +1254,19 @@ verus! {
 
                             host::get_max_accepted_ballot_corresponds_to_largest_ballot(accepted_map);
                             assert(calculated_ballot == largest_sender_ballot);
+
                             host::get_max_accepted_value_is_some_implies_accepted_map_has_corresponding_sender(accepted_map);
+                            let calculated_sender = choose |s: nat| #[trigger] host::map_has_key_with_some_value_same_as_get_max_accepted_value(accepted_map, s);
+                            assert(self.same_accepted_ballots_have_same_value_in_accepted_map_in_promised_of_all_hosts(c));
+                            assert(host::same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map));
+                            assert(host::accepted_map_ballots_are_same(accepted_map[calculated_sender].unwrap().0, accepted_map[largest_sender].unwrap().0));
+                            assert(accepted_map[calculated_sender] == accepted_map[largest_sender]);
                             assert(calculated_value == largest_sender_value);
 
-                            self.accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(c, u, h1, sender, accepted_ballot, future_ballot);
+                            self.accepted_system_calculates_same_proposed_value_in_future_is_inductive_for_accepted_host_step(c, u, h1, step_key, sender, accepted_ballot, future_ballot);
                             assert(largest_sender_value == old_accepted_value);
                         } else {
-                            assert(two_maps_contain_values_with_min_len(lu.accepted, u.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
+                            assert(two_maps_contain_values_with_min_len(lu.instances[instance].accepted, u.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures));
                             assert(calculated_value == old_accepted_value);
                         }
                     },
@@ -1255,37 +1282,39 @@ verus! {
         ensures
             self.accepted_system_always_proposes_same_value_in_future(c),
         {
-            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(host_map_properties(c, self)) by { self.all_map_and_set_sizes_are_bounded_is_inductive(c, u, event); };
             assert(self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c)) by { self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event); };
 
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let Transition::HostStep { host_id, instance, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |i: int, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
+            assert forall |i: int, instance: nat, accepted_ballot: host::Ballot, future_ballot: host::Ballot|
                 0 <= i < self.hosts.len() &&
+                self.hosts[i].instances.contains_key(instance) &&
                 0 <= future_ballot.pid < self.hosts.len() &&
-                #[trigger] map_contains_key_with_min_len_and_map_contains_key(self.hosts[i].accepted, self.hosts[future_ballot.pid as int].proposed_value, accepted_ballot, future_ballot, c.num_failures) &&
+                self.hosts[future_ballot.pid as int].instances.contains_key(instance) &&
+                #[trigger] map_contains_key_with_min_len_and_map_contains_key(self.hosts[i].instances[instance].accepted, self.hosts[future_ballot.pid as int].instances[instance].proposed_value, accepted_ballot, future_ballot, c.num_failures) &&
                 future_ballot.cmp(&accepted_ballot) >= 0 implies
-                self.hosts[future_ballot.pid as int].proposed_value[future_ballot] == self.hosts[i].proposed_value[accepted_ballot]
+                self.hosts[future_ballot.pid as int].instances[instance].proposed_value[future_ballot] == self.hosts[i].instances[instance].proposed_value[accepted_ballot]
             by {
                 if (future_ballot.cmp(&accepted_ballot) > 0) {
                     let h2 = future_ballot.pid as int;
                     self.if_host_proposed_then_quorum_has_promised_is_inductive(c, u, event);
-                    assert(two_maps_contain_values_with_min_len(self.hosts[i].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
-                    let calculated_result = host::get_max_accepted_value(self.hosts[h2].promised[future_ballot]);
+                    assert(two_maps_contain_values_with_min_len(self.hosts[i].instances[instance].accepted, self.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures));
+                    let calculated_result = host::get_max_accepted_value(self.hosts[h2].instances[instance].promised[future_ballot]);
                     self.if_system_accepted_exists_some_accept_value_in_future_promise_quorum_is_inductive(c, u, event);
-                    host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(self.hosts[h2].promised[future_ballot]);
+                    host::get_max_accepted_value_is_some_if_accepted_map_has_sender_with_value_as_some_value(self.hosts[h2].instances[instance].promised[future_ballot]);
                     assert(calculated_result.is_some());
                     let (calculated_ballot, calculated_value) = calculated_result.unwrap();
 
 
                     self.accepted_system_calculates_same_proposed_value_in_future_is_inductive(c, u, event);
-                    assert(two_maps_contain_values_with_min_len(self.hosts[i].accepted, self.hosts[h2].promised, accepted_ballot, future_ballot, c.num_failures));
-                    assert(calculated_value == self.hosts[i].proposed_value[accepted_ballot]);
+                    assert(two_maps_contain_values_with_min_len(self.hosts[i].instances[instance].accepted, self.hosts[h2].instances[instance].promised, accepted_ballot, future_ballot, c.num_failures));
+                    assert(calculated_value == self.hosts[i].instances[instance].proposed_value[accepted_ballot]);
 
                     self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event);
-                    assert(self.proposed_some_value_and_get_max_accepted_value_is_some(h2, future_ballot));
-                    assert(self.hosts[h2].proposed_value[future_ballot] == calculated_value);
+                    assert(self.proposed_some_value_and_get_max_accepted_value_is_some(h2, instance, future_ballot));
+                    assert(self.hosts[h2].instances[instance].proposed_value[future_ballot] == calculated_value);
                 }
             };
         }
