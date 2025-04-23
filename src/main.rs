@@ -56,6 +56,79 @@ verus! {
                 v.accepted_system_always_proposes_same_value_in_future_is_inductive(c, u, event);
             };
         };
+
+        assert(high_next(&constants_abstraction(c), &variables_abstraction(c, u), &variables_abstraction(c, v), event)) by {
+            assert(host_map_properties(c, v));
+            inductive_is_safe(c, v);
+
+            let Transition::HostStep { host_id, instance: step_key, net_op } = choose |transition: Transition| is_valid_transition(c, u, v, transition, event);
+            let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &v.hosts[host_id]);
+
+            match (event) {
+                Event::Decide { key, value } => {
+                    assert(forall |i: int| #![auto] 0 <= i < u.hosts.len() ==> v.hosts[i].instances.dom() == u.hosts[i].instances.dom());
+
+                    let old_calculated_map = Map::new(
+                        |key: nat| (exists |i: int| #![auto] 0 <= i < u.hosts.len() && u.hosts[i].instances.contains_key(key) && u.hosts[i].instances[key].decide_value.is_some()),
+                        |key: nat| {
+                            let host = choose |i: int| #![auto] 0 <= i < u.hosts.len() && u.hosts[i].instances.contains_key(key) && u.hosts[i].instances[key].decide_value.is_some();
+                            u.hosts[host].instances[key].decide_value.unwrap()
+                        },
+                    );
+
+                    let new_calculated_map = Map::new(
+                        |key: nat| (exists |i: int| #![auto] 0 <= i < v.hosts.len() && v.hosts[i].instances.contains_key(key) && v.hosts[i].instances[key].decide_value.is_some()),
+                        |key: nat| {
+                            let host = choose |i: int| #![auto] 0 <= i < v.hosts.len() && v.hosts[i].instances.contains_key(key) && v.hosts[i].instances[key].decide_value.is_some();
+                            v.hosts[host].instances[key].decide_value.unwrap()
+                        },
+                    );
+
+                    assert(new_calculated_map.dom() =~= old_calculated_map.dom().insert(key));
+
+                    if (old_calculated_map.contains_key(key)) {
+                        assert(new_calculated_map[key] == old_calculated_map[key]);
+                    }
+
+                    assert(new_calculated_map =~= old_calculated_map.insert(key, value));
+                    assert(high_next(&constants_abstraction(c), &variables_abstraction(c, u), &variables_abstraction(c, v), event));
+                },
+                Event::NoOp => {
+                    if (host::init_request(lc, lu, lv, step_key, net_op)) {
+                        assert(forall |i: int| #![auto] 0 <= i < u.hosts.len() && i != host_id ==> v.hosts[i].instances.dom() == u.hosts[i].instances.dom());
+                    } else {
+                        assert(forall |i: int| #![auto] 0 <= i < u.hosts.len() ==> v.hosts[i].instances.dom() == u.hosts[i].instances.dom());
+                    }
+
+                    assert(forall |i: int, key: nat| #![auto]
+                        0 <= i < u.hosts.len() &&
+                        u.hosts[i].instances.contains_key(key) ==>
+                        v.hosts[i].instances[key].decide_value == u.hosts[i].instances[key].decide_value);
+
+                    let old_calculated_map = Map::new(
+                        |key: nat| (exists |i: int| #![auto] 0 <= i < u.hosts.len() && u.hosts[i].instances.contains_key(key) && u.hosts[i].instances[key].decide_value.is_some()),
+                        |key: nat| {
+                            let host = choose |i: int| #![auto] 0 <= i < u.hosts.len() && u.hosts[i].instances.contains_key(key) && u.hosts[i].instances[key].decide_value.is_some();
+                            u.hosts[host].instances[key].decide_value.unwrap()
+                        },
+                    );
+
+                    let new_calculated_map = Map::new(
+                        |key: nat| (exists |i: int| #![auto] 0 <= i < v.hosts.len() && v.hosts[i].instances.contains_key(key) && v.hosts[i].instances[key].decide_value.is_some()),
+                        |key: nat| {
+                            let host = choose |i: int| #![auto] 0 <= i < v.hosts.len() && v.hosts[i].instances.contains_key(key) && v.hosts[i].instances[key].decide_value.is_some();
+                            v.hosts[host].instances[key].decide_value.unwrap()
+                        },
+                    );
+
+                    assert(variables_abstraction(c, u).decided_value =~= old_calculated_map);
+                    assert(variables_abstraction(c, v).decided_value =~= new_calculated_map);
+
+                    assert(new_calculated_map =~= old_calculated_map);
+                    assert(high_next(&constants_abstraction(c), &variables_abstraction(c, u), &variables_abstraction(c, v), event));
+                },
+            };
+        };
     }
 
     // Corresponds to `inductive(c, u) ==> safety(c, u)`
@@ -64,7 +137,7 @@ verus! {
         inductive(c, u)
     ensures
         safety(c, u)
-    {}
+    { }
 
     fn main() { }
 }

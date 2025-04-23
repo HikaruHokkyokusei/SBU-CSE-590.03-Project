@@ -26,9 +26,9 @@ verus! {
     {
         HighVariables {
             decided_value: Map::new(
-                |key: nat| (exists |i: int| #![auto] 0 <= lv.hosts.len() && lv.hosts[i].instances.contains_key(key) && lv.hosts[i].instances[key].decide_value.is_some()),
+                |key: nat| (exists |i: int| #![auto] 0 <= i < lv.hosts.len() && lv.hosts[i].instances.contains_key(key) && lv.hosts[i].instances[key].decide_value.is_some()),
                 |key: nat| {
-                    let host = choose |i: int| #![auto] 0 <= lv.hosts.len() && lv.hosts[i].instances.contains_key(key) && lv.hosts[i].instances[key].decide_value.is_some();
+                    let host = choose |i: int| #![auto] 0 <= i < lv.hosts.len() && lv.hosts[i].instances.contains_key(key) && lv.hosts[i].instances[key].decide_value.is_some();
                     lv.hosts[host].instances[key].decide_value.unwrap()
                 },
             )
