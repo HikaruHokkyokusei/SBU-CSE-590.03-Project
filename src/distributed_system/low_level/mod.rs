@@ -523,9 +523,9 @@ verus! {
         }
 
         pub open spec fn all_decide_messages_hold_same_value(&self, c: &Constants) -> bool {
-            forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
-                self.network.in_flight_messages.contains(Message::Decide { ballot: b2, value: v2 }) ==>
+            forall |key: nat, b1: host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Decide { key, ballot: b1, value: v1 }) &&
+                self.network.in_flight_messages.contains(Message::Decide { key, ballot: b2, value: v2 }) ==>
                 v1 == v2
         }
 
@@ -640,24 +640,24 @@ verus! {
         ensures
             self.all_decide_messages_hold_same_value(c)
         {
-            assert(host_map_properties(c, self)) by { self.all_maps_and_sets_are_finite_is_inductive(c, u, event); };
+            assert(self.all_maps_and_sets_are_finite(c));
             assert(self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some(c)) by { self.if_host_proposed_some_value_it_is_always_same_as_get_max_accepted_value_if_some_is_inductive(c, u, event); };
 
-            let Transition::HostStep { host_id, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
+            let Transition::HostStep { host_id, instance, net_op } = choose |transition: Transition| is_valid_transition(c, u, self, transition, event);
             let (lc, lu, lv) = (&c.hosts[host_id], &u.hosts[host_id], &self.hosts[host_id]);
 
-            assert forall |b1:host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
-                self.network.in_flight_messages.contains(Message::Decide { ballot: b1, value: v1 }) &&
-                self.network.in_flight_messages.contains(Message::Decide { ballot: b2, value: v2 }) implies
+            assert forall |key: nat, b1: host::Ballot, v1: Value, b2: host::Ballot, v2: Value| #![auto]
+                self.network.in_flight_messages.contains(Message::Decide { key, ballot: b1, value: v1 }) &&
+                self.network.in_flight_messages.contains(Message::Decide { key, ballot: b2, value: v2 }) implies
                 v1 == v2
             by {
                 let (h1, h2) = (b1.pid as int, b2.pid as int);
                 assert(0 <= h1 < self.hosts.len() && 0 <= h2 < self.hosts.len());
-                assert(map_contains_key_with_min_len(self.hosts[h1].accepted, b1, c.num_failures));
-                assert(map_contains_key_with_min_len(self.hosts[h2].accepted, b2, c.num_failures));
+                assert(map_contains_key_with_min_len(self.hosts[h1].instances[key].accepted, b1, c.num_failures));
+                assert(map_contains_key_with_min_len(self.hosts[h2].instances[key].accepted, b2, c.num_failures));
 
-                assert(self.hosts[h1].proposed_value.contains_key(b1) && self.hosts[h2].proposed_value.contains_key(b2));
-                assert(v1 == self.hosts[h1].proposed_value[b1] && v2 == self.hosts[h2].proposed_value[b2]);
+                assert(self.hosts[h1].instances[key].proposed_value.contains_key(b1) && self.hosts[h2].instances[key].proposed_value.contains_key(b2));
+                assert(v1 == self.hosts[h1].instances[key].proposed_value[b1] && v2 == self.hosts[h2].instances[key].proposed_value[b2]);
 
                 if (b1 != b2) {
                     let (future_leader, future_ballot, future_value) = if (b1.cmp(&b2) > 0) {
@@ -673,7 +673,7 @@ verus! {
 
                     assert(future_ballot.cmp(&past_ballot) > 0);
                     self.accepted_system_always_proposes_same_value_in_future_is_inductive(c, u, event);
-                    assert(map_contains_key_with_min_len_and_map_contains_key(self.hosts[past_leader].accepted, self.hosts[future_leader].proposed_value, past_ballot, future_ballot, c.num_failures));
+                    assert(map_contains_key_with_min_len_and_map_contains_key(self.hosts[past_leader].instances[key].accepted, self.hosts[future_leader].instances[key].proposed_value, past_ballot, future_ballot, c.num_failures));
                 }
 
                 assert (v1 == v2);
