@@ -10,19 +10,44 @@ verus! {
     pub struct Constants {}
 
     pub struct Variables {
-        in_flight_messages: HashSet<Message>,
+        pub in_flight_messages: HashSet<Message>,
     }
 
     impl Constants {
-        pub closed spec fn into_spec(&self) -> LowConstants {
+        pub open spec fn well_formed(&self) -> bool {
+            true
+        }
+
+        pub open spec fn into_spec(&self) -> LowConstants {
             LowConstants { }
         }
     }
 
     impl Variables {
-        pub closed spec fn into_spec(&self) -> LowVariables {
+        pub open spec fn well_formed(&self, c: &Constants) -> bool {
+            &&& c.well_formed()
+        }
+
+        pub open spec fn into_spec(&self) -> LowVariables {
             LowVariables {
                 in_flight_messages: self.in_flight_messages@.map(|val: Message| val.into_spec()),
+            }
+        }
+    }
+
+    impl Constants {
+        pub exec fn new() -> Self {
+            Self { }
+        }
+    }
+
+    impl Variables {
+        pub exec fn new() -> (res: Self)
+        ensures
+            res.in_flight_messages@.is_empty(),
+        {
+            Self {
+                in_flight_messages: HashSet::new(),
             }
         }
     }

@@ -42,6 +42,13 @@ verus! {
     }
 
     impl Constants {
+        pub open spec fn well_formed(&self) -> bool {
+            &&& 0 <= self.id < self.num_hosts
+            &&& self.num_hosts > 0
+            &&& self.num_failures > 0
+            &&& self.num_hosts == ((2 * self.num_failures) + 1)
+        }
+
         pub open spec fn into_spec(&self) -> LowConstants {
             LowConstants {
                 id: self.id as nat,
@@ -88,6 +95,10 @@ verus! {
     }
 
     impl Variables {
+        pub open spec fn well_formed(&self, c: &Constants) -> bool {
+            &&& c.well_formed()
+        }
+
         pub open spec fn into_spec(&self) -> LowVariables {
             LowVariables {
                 instances: self.instances@
@@ -99,6 +110,38 @@ verus! {
                             acc.insert(key as nat, instance.into_spec())
                         },
                     ),
+            }
+        }
+    }
+
+    impl Constants {
+        pub exec fn new(id: usize, num_hosts: usize, num_failures: usize) -> (res: Self)
+        requires
+            num_failures > 0,
+            num_hosts == ((2 * num_failures) + 1),
+            0 <= id < num_hosts,
+        ensures
+            res.id == id,
+            res.num_hosts == num_hosts,
+            res.num_failures == num_failures,
+        {
+            Self {
+                id,
+                num_hosts,
+                num_failures,
+            }
+        }
+    }
+
+    impl Variables {
+        pub exec fn new(c: &Constants) -> (res: Self)
+        requires
+            c.well_formed(),
+        ensures
+            res.instances@.is_empty(),
+        {
+            Self {
+                instances: HashMap::new(),
             }
         }
     }
