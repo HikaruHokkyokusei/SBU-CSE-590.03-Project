@@ -7,7 +7,19 @@ use crate::distributed_system::{
     Value as SpecValue,
 };
 use std::collections::{HashMap, HashSet};
-use vstd::prelude::*;
+use vstd::{
+    prelude::*,
+    std_specs::hash::{
+        axiom_random_state_builds_valid_hashers, axiom_spec_hash_map_len,
+        axiom_u64_obeys_hash_table_key_model,
+    },
+};
+
+verus! {
+    pub assume_specification<K, V, S> [std::collections::HashMap::is_empty] (hash_map: &HashMap<K, V, S>) -> (is_empty: bool)
+    ensures
+        is_empty == hash_map@.is_empty();
+}
 
 verus! {
     pub struct Ballot {
@@ -38,6 +50,7 @@ verus! {
     }
 
     pub struct Variables {
+        pub current_instance: u64,
         pub instances: HashMap<u64, Instance>,
     }
 
@@ -138,11 +151,39 @@ verus! {
         requires
             c.well_formed(),
         ensures
+            res.well_formed(c),
+            res.current_instance == 0,
             res.instances@.is_empty(),
+            res.instances.len() == 0,
+            res.into_spec().instances.is_empty(),
         {
-            Self {
+            let res = Self {
+                current_instance: 0,
                 instances: HashMap::new(),
-            }
+            };
+
+            let is_map_empty = res.instances.is_empty();
+            let map_size = res.instances.len();
+
+            proof! {
+                assert(is_map_empty);
+                broadcast use axiom_u64_obeys_hash_table_key_model;
+                broadcast use axiom_random_state_builds_valid_hashers;
+                broadcast use axiom_spec_hash_map_len;
+                assert(map_size == res.instances@.len());
+                assert(map_size == 0);
+            };
+
+            proof! {
+                let spec_var = res.into_spec();
+                assert(res.instances@.dom().finite());
+                // TODO: Don't assume. Write valid proof.
+                // Ref: https://github.com/verus-lang/verus/blob/f894e505a1c89dd36fe9eb01b51dc0b89e29c6a1/source/vstd/set.rs#L426C1-L453C6
+                assume(spec_var.instances.dom().finite());
+                assume(spec_var.instances.len() == map_size);
+            };
+
+            res
         }
     }
 }

@@ -1,5 +1,8 @@
 use crate::distributed_system::{
-    low_level::{Constants as LowConstants, Message as LowMessage, Variables as LowVariables},
+    low_level::{
+        init as low_init, Constants as LowConstants, Message as LowMessage,
+        Variables as LowVariables,
+    },
     Value as SpecValue,
 };
 use vstd::prelude::*;
@@ -152,14 +155,22 @@ verus! {
             c.network.well_formed(),
         ensures
             res.well_formed(c),
+            low_init(&constants_abstraction(c), &variables_abstraction(c, &res)),
         {
-            let mut hosts = Vec::with_capacity(c.num_hosts);
+            let mut hosts: Vec<host::Variables> = Vec::with_capacity(c.num_hosts);
 
             for id in 0..c.num_hosts
             invariant
                 c.well_formed(),
-                forall |i: usize| #![auto] 0 <= i < c.hosts.len() ==> c.hosts[i as int].well_formed(),
                 hosts.len() == id,
+                forall |i: usize| #![auto]
+                    0 <= i < c.hosts.len() ==>
+                    c.hosts[i as int].well_formed(),
+                forall |i: usize| #![auto]
+                    0 <= i < hosts.len() ==>
+                    hosts[i as int].instances@.is_empty() &&
+                    hosts[i as int].instances.len() == 0 &&
+                    hosts[i as int].into_spec().instances.is_empty(),
             {
                 hosts.push(host::Variables::new(&c.hosts[id]));
             }
