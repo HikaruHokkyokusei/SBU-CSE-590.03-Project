@@ -1,8 +1,11 @@
 use super::{Message, Value};
 use crate::distributed_system::{
-    low_level::host::{
-        Ballot as LowBallot, Constants as LowConstants, Instance as LowInstance,
-        Variables as LowVariables,
+    low_level::{
+        host::{
+            init_request as low_init_request, Ballot as LowBallot, Constants as LowConstants,
+            Instance as LowInstance, Variables as LowVariables,
+        },
+        NetworkOperation,
     },
     Value as SpecValue,
 };
@@ -146,6 +149,42 @@ verus! {
         }
     }
 
+    impl Instance {
+        pub exec fn new() -> (res: Instance)
+        ensures
+            (res.into_spec() == LowInstance {
+                current_ballot: LowBallot { num: 0, pid: 0 },
+                promised: Map::empty(),
+                proposed_value: Map::empty(),
+                accepted: Map::empty(),
+                accept_ballot: None,
+                accept_value: None,
+                decide_value: None,
+            })
+        {
+            let res = Instance {
+                current_ballot: Ballot { num: 0, pid: 0 },
+                promised: HashMap::new(),
+                proposed_value: HashMap::new(),
+                accepted: HashMap::new(),
+                accept_ballot: None,
+                accept_value: None,
+                decide_value: None,
+            };
+
+            proof! {
+                let instance_spec = res.into_spec();
+
+                // TODO: Don't assume. Write valid proof.
+                assume(instance_spec.promised =~= Map::empty());
+                assume(instance_spec.proposed_value =~= Map::empty());
+                assume(instance_spec.accepted =~= Map::empty());
+            };
+
+            res
+        }
+    }
+
     impl Variables {
         pub exec fn new(c: &Constants) -> (res: Self)
         requires
@@ -205,6 +244,36 @@ verus! {
         }),
         {
             self.current_instance = self.current_instance + 1;
+        }
+
+        pub exec fn init_request(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& !old_spec.instances.contains_key(old(self).current_instance as nat)
+            &&& recv.is_none()
+        }),
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send.is_none()
+            &&& low_init_request(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        }),
+        {
+            let new_instance = Instance::new();
+            self.instances.insert(self.current_instance, new_instance);
+
+            proof! {
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+                // TODO: Don't assume. Write valid proof.
+                assume(new_spec.instances == old_spec.instances.insert(self.current_instance as nat, new_instance.into_spec()));
+            };
+
+            None
         }
     }
 }
