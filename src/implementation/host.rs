@@ -1,4 +1,4 @@
-use super::Value;
+use super::{Message, Value};
 use crate::distributed_system::{
     low_level::host::{
         Ballot as LowBallot, Constants as LowConstants, Instance as LowInstance,
@@ -184,6 +184,27 @@ verus! {
             };
 
             res
+        }
+    }
+
+    impl Variables {
+        pub open spec fn net_op(recv: Option<Message>, send: Option<Message>) -> NetworkOperation {
+            NetworkOperation {
+                recv: if let Some(recv) = recv { Some(recv.into_spec()) } else { None },
+                send: if let Some(send) = send { Some(send.into_spec()) } else { None },
+            }
+        }
+
+        pub exec fn next_instance(&mut self, c: &Constants)
+        requires ({
+            &&& old(self).current_instance + 1 <= u64::MAX
+        }),
+        ensures ({
+            &&& self == Variables { current_instance: (old(self).current_instance + 1) as u64, instances: old(self).instances }
+            &&& self.into_spec() == old(self).into_spec()
+        }),
+        {
+            self.current_instance = self.current_instance + 1;
         }
     }
 }
