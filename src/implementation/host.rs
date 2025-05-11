@@ -145,30 +145,20 @@ verus! {
         pub open spec fn into_spec(&self) -> LowInstance {
             LowInstance {
                 current_ballot: self.current_ballot.into_spec(),
-                promised: self.promised@.dom().fold(
-                    Map::empty(),
-                    |acc: Map<LowBallot, Map<nat, Option<(LowBallot, SpecValue)>>>, ballot: Ballot| {
-                        let promised_map = self.promised@[ballot];
-                        acc.insert(ballot.into_spec(), promised_map@.dom().fold(
-                            Map::empty(),
-                            |acc: Map<nat, Option<(LowBallot, SpecValue)>>, sender: usize| {
-                                acc.insert(sender as nat, if let Some((ballot, value)) = promised_map@[sender] { Some((ballot.into_spec(), value as SpecValue)) } else { None })
-                            },
-                        ))
-                    },
+                promised: Map::new(
+                    |ballot: LowBallot| Ballot::valid_spec(ballot) && self.promised@.contains_key(Ballot::from_spec(ballot)),
+                    |ballot: LowBallot| Map::new(
+                        |sender: nat| sender <= usize::MAX && self.promised@[Ballot::from_spec(ballot)]@.contains_key(sender as usize),
+                        |sender: nat| if let Some((ballot, value)) = self.promised@[Ballot::from_spec(ballot)]@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                    ),
                 ),
-                proposed_value: self.proposed_value@.dom().fold(
-                    Map::empty(),
-                    |acc: Map<LowBallot, SpecValue>, ballot: Ballot| {
-                        acc.insert(ballot.into_spec(), self.proposed_value@[ballot] as SpecValue)
-                    },
+                proposed_value: Map::new(
+                    |ballot: LowBallot| Ballot::valid_spec(ballot) && self.proposed_value@.contains_key(Ballot::from_spec(ballot)),
+                    |ballot: LowBallot| self.proposed_value@[Ballot::from_spec(ballot)] as SpecValue,
                 ),
-                accepted: self.accepted@.dom().fold(
-                    Map::empty(),
-                    |acc: Map<LowBallot, Set<nat>>, ballot: Ballot| {
-                        let sender_set = self.accepted@[ballot];
-                        acc.insert(ballot.into_spec(), sender_set@.map(|sender: usize| sender as nat))
-                    },
+                accepted: Map::new(
+                    |ballot: LowBallot| Ballot::valid_spec(ballot) && self.accepted@.contains_key(Ballot::from_spec(ballot)),
+                    |ballot: LowBallot| Set::new(|sender: nat| sender <= usize::MAX && self.accepted@[Ballot::from_spec(ballot)]@.contains(sender as usize)),
                 ),
                 accept_ballot: if let Some(ballot) = self.accept_ballot { Some(ballot.into_spec()) } else { None },
                 accept_value: if let Some(value) = self.accept_value { Some(value as SpecValue) } else { None },
@@ -184,14 +174,9 @@ verus! {
 
         pub open spec fn into_spec(&self) -> LowVariables {
             LowVariables {
-                instances: self.instances@
-                    .dom()
-                    .fold(
-                        Map::empty(),
-                        |acc: Map<nat, LowInstance>, key: u64| {
-                            let instance = self.instances@[key];
-                            acc.insert(key as nat, instance.into_spec())
-                        },
+                instances: Map::new(
+                    |instance: nat| instance <= u64::MAX && self.instances@.contains_key(instance as u64),
+                    |instance: nat| self.instances@[instance as u64].into_spec(),
                     ),
             }
         }

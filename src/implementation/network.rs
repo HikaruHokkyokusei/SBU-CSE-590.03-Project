@@ -1,6 +1,7 @@
 use super::Message;
-use crate::distributed_system::low_level::network::{
-    Constants as LowConstants, Variables as LowVariables,
+use crate::distributed_system::low_level::{
+    network::{Constants as LowConstants, Variables as LowVariables},
+    Message as LowMessage,
 };
 use std::collections::HashSet;
 
@@ -30,7 +31,7 @@ verus! {
 
         pub open spec fn into_spec(&self) -> LowVariables {
             LowVariables {
-                in_flight_messages: self.in_flight_messages@.map(|val: Message| val.into_spec()),
+                in_flight_messages: Set::new(|message: LowMessage| self.in_flight_messages@.contains(Message::from_spec(message))),
             }
         }
     }

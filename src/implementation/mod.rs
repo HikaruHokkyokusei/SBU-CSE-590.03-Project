@@ -171,7 +171,7 @@ verus! {
 
         pub open spec fn into_spec(&self) -> LowVariables {
             LowVariables {
-                hosts: self.hosts@.map(|i: int, v: host::Variables| v.into_spec()),
+                hosts: Seq::new(self.hosts@.len(), |i: int| self.hosts@[i].into_spec()),
                 network: self.network.into_spec(),
             }
         }
