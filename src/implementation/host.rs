@@ -2,8 +2,9 @@ use super::{Message, Value};
 use crate::distributed_system::{
     low_level::{
         host::{
-            init_request as low_init_request, Ballot as LowBallot, Constants as LowConstants,
-            Instance as LowInstance, Variables as LowVariables,
+            init_request as low_init_request, send_prepare as low_send_prepare,
+            Ballot as LowBallot, Constants as LowConstants, Instance as LowInstance,
+            Variables as LowVariables,
         },
         NetworkOperation,
     },
@@ -19,15 +20,36 @@ use vstd::{
 };
 
 verus! {
+    pub assume_specification<K, V, S> [std::collections::HashMap::clone] (original: &HashMap<K, V, S>) -> (clone: std::collections::HashMap<K, V, S>)
+    where
+        K: Clone,
+        V: Clone,
+        S: Clone,
+    ensures
+        original == clone;
+
     pub assume_specification<K, V, S> [std::collections::HashMap::is_empty] (hash_map: &HashMap<K, V, S>) -> (is_empty: bool)
     ensures
         is_empty == hash_map@.is_empty();
 }
 
 verus! {
+    #[derive(Eq, PartialEq, std::hash::Hash)]
     pub struct Ballot {
         pub num: u64,
         pub pid: usize,
+    }
+
+    impl Clone for Ballot {
+        fn clone(&self) -> (clone: Self)
+        ensures
+            self == clone,
+        {
+            Self {
+                num: self.num.clone(),
+                pid: self.pid.clone(),
+            }
+        }
     }
 
     impl Ballot {
@@ -55,6 +77,36 @@ verus! {
     pub struct Variables {
         pub current_instance: u64,
         pub instances: HashMap<u64, Instance>,
+    }
+
+    impl Clone for Constants {
+        fn clone(&self) -> (clone: Self)
+        ensures
+            self == clone,
+        {
+            Self {
+                id: self.id.clone(),
+                num_hosts: self.num_hosts.clone(),
+                num_failures: self.num_failures.clone()
+            }
+        }
+    }
+
+    impl Clone for Instance {
+        exec fn clone(&self) -> (clone: Self)
+        ensures
+            self == clone,
+        {
+            Self {
+                current_ballot: self.current_ballot.clone(),
+                promised: self.promised.clone(),
+                proposed_value: self.proposed_value.clone(),
+                accepted: self.accepted.clone(),
+                accept_ballot: self.accept_ballot.clone(),
+                accept_value: self.accept_value.clone(),
+                decide_value: self.decide_value.clone(),
+            }
+        }
     }
 
     impl Constants {
@@ -274,6 +326,66 @@ verus! {
             };
 
             None
+        }
+
+        pub exec fn send_prepare(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& old_spec.instances.contains_key(key)
+            &&& old_spec.instances[key].current_ballot.num < u64::MAX
+            &&& !old_spec.instances[key].promised.contains_key(LowBallot { num: old_spec.instances[key].current_ballot.num + 1, pid: c.id as nat, })
+            &&& !old_spec.instances[key].proposed_value.contains_key(LowBallot { num: old_spec.instances[key].current_ballot.num + 1, pid: c.id as nat, })
+            &&& !old_spec.instances[key].accepted.contains_key(LowBallot { num: old_spec.instances[key].current_ballot.num + 1, pid: c.id as nat, })
+            &&& old_spec.instances[key].decide_value.is_none()
+            &&& recv.is_none()
+        }),
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+            let key = self.current_instance as nat;
+            let new_ballot = Ballot { num: (new_spec.instances[key].current_ballot.num + 1) as u64, pid: c.id, };
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send == Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
+            &&& low_send_prepare(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        }),
+        {
+            let current_instance = self.instances.get(&self.current_instance);
+            // TODO: Don't assume. Write valid proof.
+            proof! { assume(current_instance.is_some()); }; // Corresponds: old_spec.instances.contains_key(key)
+            let current_instance = current_instance.unwrap();
+
+            // TODO: Don't assume. Write valid proof.
+            proof! { assume(current_instance.current_ballot.num == old(self).into_spec().instances[self.current_instance as nat].current_ballot.num); }; // Corresponds: old_spec.instances[key].current_ballot.num < u64::MAX
+            let new_ballot = Ballot { num: current_instance.current_ballot.num + 1, pid: c.id, };
+
+            let mut updated_instance = current_instance.clone();
+            updated_instance.promised.insert(new_ballot.clone(), HashMap::new());
+            updated_instance.accepted.insert(new_ballot.clone(), HashSet::new());
+
+            self.instances.insert(self.current_instance, updated_instance);
+
+            proof! {
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+                let key = self.current_instance as nat;
+                let new_ballot_spec = new_ballot.into_spec();
+
+                // TODO: Don't assume. Write valid proof.
+                assume(new_spec.instances == old_spec.instances.insert(key, LowInstance {
+                    current_ballot: old_spec.instances[key].current_ballot,
+                    promised: old_spec.instances[key].promised.insert(new_ballot_spec, Map::empty()),
+                    proposed_value: old_spec.instances[key].proposed_value,
+                    accepted: old_spec.instances[key].accepted.insert(new_ballot_spec, Set::empty()),
+                    accept_ballot: old_spec.instances[key].accept_ballot,
+                    accept_value: old_spec.instances[key].accept_value,
+                    decide_value: old_spec.instances[key].decide_value,
+                }));
+            };
+
+            Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
         }
     }
 }
