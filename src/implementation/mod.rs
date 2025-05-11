@@ -233,14 +233,8 @@ verus! {
             invariant
                 c.well_formed(),
                 hosts.len() == id,
-                forall |i: usize| #![auto]
-                    0 <= i < c.hosts.len() ==>
-                    c.hosts[i as int].well_formed(),
-                forall |i: usize| #![auto]
-                    0 <= i < hosts.len() ==>
-                    hosts[i as int].instances@.is_empty() &&
-                    hosts[i as int].instances.len() == 0 &&
-                    hosts[i as int].into_spec().instances.is_empty(),
+                forall |i: usize| #![auto] 0 <= i < c.hosts.len() ==> c.hosts[i as int].well_formed(),
+                forall |i: usize| #![auto] 0 <= i < hosts.len() ==> hosts[i as int].into_spec().instances =~= Map::empty(),
             {
                 hosts.push(host::Variables::new(&c.hosts[id]));
             }

@@ -202,19 +202,20 @@ verus! {
     }
 
     impl Instance {
-        pub exec fn new() -> (res: Instance)
-        ensures
-            (res.into_spec() == LowInstance {
-                current_ballot: LowBallot { num: 0, pid: 0 },
-                promised: Map::empty(),
-                proposed_value: Map::empty(),
-                accepted: Map::empty(),
-                accept_ballot: None,
-                accept_value: None,
-                decide_value: None,
-            })
+        pub exec fn new() -> (res: Self)
+        ensures ({
+            let res = res.into_spec();
+
+            &&& res.current_ballot == LowBallot { num: 0, pid: 0 }
+            &&& res.promised =~= Map::empty()
+            &&& res.proposed_value =~= Map::empty()
+            &&& res.accepted =~= Map::empty()
+            &&& res.accept_ballot.is_none()
+            &&& res.accept_value.is_none()
+            &&& res.decide_value.is_none()
+        })
         {
-            let res = Instance {
+            Self {
                 current_ballot: Ballot { num: 0, pid: 0 },
                 promised: HashMap::new(),
                 proposed_value: HashMap::new(),
@@ -222,18 +223,7 @@ verus! {
                 accept_ballot: None,
                 accept_value: None,
                 decide_value: None,
-            };
-
-            proof! {
-                let instance_spec = res.into_spec();
-
-                // TODO: Don't assume. Write valid proof.
-                assume(instance_spec.promised =~= Map::empty());
-                assume(instance_spec.proposed_value =~= Map::empty());
-                assume(instance_spec.accepted =~= Map::empty());
-            };
-
-            res
+            }
         }
     }
 
@@ -244,9 +234,7 @@ verus! {
         ensures
             res.well_formed(c),
             res.current_instance == 0,
-            res.instances@.is_empty(),
-            res.instances.len() == 0,
-            res.into_spec().instances.is_empty(),
+            res.into_spec().instances =~= Map::empty(),
         {
             let res = Self {
                 current_instance: 0,
@@ -263,15 +251,6 @@ verus! {
                 broadcast use axiom_spec_hash_map_len;
                 assert(map_size == res.instances@.len());
                 assert(map_size == 0);
-            };
-
-            proof! {
-                let spec_var = res.into_spec();
-                assert(res.instances@.dom().finite());
-                // TODO: Don't assume. Write valid proof.
-                // Ref: https://github.com/verus-lang/verus/blob/f894e505a1c89dd36fe9eb01b51dc0b89e29c6a1/source/vstd/set.rs#L426C1-L453C6
-                assume(spec_var.instances.dom().finite());
-                assume(spec_var.instances.len() == map_size);
             };
 
             res
