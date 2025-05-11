@@ -22,6 +22,76 @@ verus! {
     }
 
     impl Message {
+        pub open spec fn valid_spec(message: LowMessage) -> bool {
+            match (message) {
+                LowMessage::Prepare { key, ballot } => {
+                    &&& key <= u64::MAX
+                    &&& host::Ballot::valid_spec(ballot)
+                },
+                LowMessage::Promise { key, sender, ballot, accepted } => {
+                    &&& key <= u64::MAX
+                    &&& sender <= usize::MAX
+                    &&& host::Ballot::valid_spec(ballot)
+                    &&& if let Some((ballot, value)) = accepted {
+                        &&& host::Ballot::valid_spec(ballot)
+                        &&& value <= Value::MAX
+                    } else { true }
+                }
+                LowMessage::Accept { key, ballot, value } => {
+                    &&& key <= u64::MAX
+                    &&& host::Ballot::valid_spec(ballot)
+                    &&& value <= Value::MAX
+                },
+                LowMessage::Accepted { key, sender, ballot } => {
+                    &&& key <= u64::MAX
+                    &&& sender <= usize::MAX
+                    &&& host::Ballot::valid_spec(ballot)
+                },
+                LowMessage::Decide { key, ballot, value } => {
+                    &&& key <= u64::MAX
+                    &&& host::Ballot::valid_spec(ballot)
+                    &&& value <= Value::MAX
+                },
+            }
+        }
+
+        pub open spec fn from_spec(message: LowMessage) -> Self
+        recommends
+            Message::valid_spec(message),
+        {
+            match (message) {
+                LowMessage::Prepare { key, ballot } => Message::Prepare {
+                    key: key as u64,
+                    ballot: host::Ballot::from_spec(ballot),
+                },
+                LowMessage::Promise { key, sender, ballot, accepted } => Message::Promise {
+                    key: key as u64,
+                    sender: sender as usize,
+                    ballot: host::Ballot::from_spec(ballot),
+                    accepted: if let Some((ballot, value)) = accepted {
+                        Some((host::Ballot::from_spec(ballot), value as Value))
+                    } else {
+                        None
+                    },
+                },
+                LowMessage::Accept { key, ballot, value } => Message::Accept {
+                    key: key as u64,
+                    ballot: host::Ballot::from_spec(ballot),
+                    value: value as usize,
+                },
+                LowMessage::Accepted { key, sender, ballot } => Message::Accepted {
+                    key: key as u64,
+                    sender: sender as usize,
+                    ballot: host::Ballot::from_spec(ballot),
+                },
+                LowMessage::Decide { key, ballot, value } => Message::Decide {
+                    key: key as u64,
+                    ballot: host::Ballot::from_spec(ballot),
+                    value: value as Value,
+                },
+            }
+        }
+
         pub open spec fn into_spec(&self) -> LowMessage {
             match(self) {
                 Message::Prepare { key, ballot } => LowMessage::Prepare {

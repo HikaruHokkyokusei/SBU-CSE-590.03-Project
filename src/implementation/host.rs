@@ -56,6 +56,21 @@ verus! {
         pub open spec fn into_spec(&self) -> LowBallot {
             LowBallot { num: self.num as nat, pid: self.pid as nat }
         }
+
+        pub open spec fn valid_spec(ballot: LowBallot) -> bool {
+            &&& ballot.num <= u64::MAX
+            &&& ballot.pid <= usize::MAX
+        }
+
+        pub open spec fn from_spec(spec_ballot: LowBallot) -> (res: Self)
+        recommends
+            Ballot::valid_spec(spec_ballot),
+        {
+            Self {
+                num: spec_ballot.num as u64,
+                pid: spec_ballot.pid as usize,
+            }
+        }
     }
 
     pub struct Constants {
