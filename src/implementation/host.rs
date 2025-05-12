@@ -15,7 +15,7 @@ use vstd::{
     prelude::*,
     std_specs::hash::{
         axiom_random_state_builds_valid_hashers, axiom_spec_hash_map_len,
-        axiom_u64_obeys_hash_table_key_model,
+        axiom_u64_obeys_hash_table_key_model, group_hash_axioms, obeys_key_model,
     },
 };
 
@@ -255,6 +255,17 @@ verus! {
 
             res
         }
+
+        pub exec fn get_current_instance(&self) -> (res: &Instance)
+        requires
+            self.into_spec().instances.contains_key(self.current_instance as nat),
+        ensures
+            *res == self.instances@[self.current_instance],
+        {
+            let current_instance = self.instances.get(&self.current_instance);
+            proof! { broadcast use group_hash_axioms; };
+            current_instance.unwrap()
+        }
     }
 
     impl Variables {
@@ -268,11 +279,11 @@ verus! {
         pub exec fn next_instance(&mut self, c: &Constants)
         requires ({
             &&& old(self).current_instance + 1 <= u64::MAX
-        }),
+        })
         ensures ({
             &&& self == Variables { current_instance: (old(self).current_instance + 1) as u64, instances: old(self).instances }
             &&& self.into_spec() == old(self).into_spec()
-        }),
+        })
         {
             self.current_instance = self.current_instance + 1;
         }
@@ -284,7 +295,7 @@ verus! {
             &&& old_spec.well_formed(&c.into_spec())
             &&& !old_spec.instances.contains_key(old(self).current_instance as nat)
             &&& recv.is_none()
-        }),
+        })
         ensures ({
             let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
 
@@ -292,7 +303,7 @@ verus! {
             &&& self.current_instance == old(self).current_instance
             &&& send.is_none()
             &&& low_init_request(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
-        }),
+        })
         {
             let new_instance = Instance::new();
             self.instances.insert(self.current_instance, new_instance);
@@ -302,7 +313,7 @@ verus! {
                 broadcast use axiom_random_state_builds_valid_hashers;
 
                 let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
-                assert(new_spec.instances == old_spec.instances.insert(self.current_instance as nat, new_instance.into_spec()));
+                assert(new_spec.instances =~= old_spec.instances.insert(self.current_instance as nat, new_instance.into_spec()));
             };
 
             None
@@ -321,7 +332,7 @@ verus! {
             &&& !old_spec.instances[key].accepted.contains_key(LowBallot { num: old_spec.instances[key].current_ballot.num + 1, pid: c.id as nat, })
             &&& old_spec.instances[key].decide_value.is_none()
             &&& recv.is_none()
-        }),
+        })
         ensures ({
             let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
             let key = self.current_instance as nat;
@@ -331,12 +342,9 @@ verus! {
             &&& self.current_instance == old(self).current_instance
             &&& send == Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
             &&& low_send_prepare(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
-        }),
+        })
         {
-            let current_instance = self.instances.get(&self.current_instance);
-            // TODO: Don't assume. Write valid proof.
-            proof! { assume(current_instance.is_some()); }; // Corresponds: old_spec.instances.contains_key(key)
-            let current_instance = current_instance.unwrap();
+            let current_instance = self.get_current_instance();
 
             // TODO: Don't assume. Write valid proof.
             proof! { assume(current_instance.current_ballot.num == old(self).into_spec().instances[self.current_instance as nat].current_ballot.num); }; // Corresponds: old_spec.instances[key].current_ballot.num < u64::MAX
