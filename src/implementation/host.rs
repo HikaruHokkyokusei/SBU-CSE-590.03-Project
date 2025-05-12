@@ -201,6 +201,11 @@ verus! {
         }
     }
 
+    pub proof fn axiom_ballot_obeys_hash_table_key_model()
+    ensures
+        #[trigger] obeys_key_model::<Ballot>(),
+    { admit(); }
+
     impl Instance {
         pub exec fn new() -> (res: Self)
         ensures ({
@@ -224,6 +229,68 @@ verus! {
                 accept_value: None,
                 decide_value: None,
             }
+        }
+
+        pub exec fn fill_promised(&mut self, key: Ballot, value: HashMap<usize, Option<(Ballot, Value)>>)
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            new_spec =~= LowInstance {
+                current_ballot: old_spec.current_ballot,
+                promised: old_spec.promised.insert(key.into_spec(), Map::new(
+                    |sender: nat| sender <= usize::MAX && value@.contains_key(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = value@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                )),
+                proposed_value: old_spec.proposed_value,
+                accepted: old_spec.accepted,
+                accept_ballot: old_spec.accept_ballot,
+                accept_value: old_spec.accept_value,
+                decide_value: old_spec.decide_value,
+            }
+        })
+        {
+            self.promised.insert(key, value);
+
+            proof! {
+                axiom_ballot_obeys_hash_table_key_model();
+                broadcast use axiom_random_state_builds_valid_hashers;
+
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+                assert(new_spec.promised =~= old_spec.promised.insert(key.into_spec(), Map::new(
+                    |sender: nat| sender <= usize::MAX && value@.contains_key(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = value@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                )));
+            };
+        }
+
+        pub exec fn fill_accepted(&mut self, key: Ballot, value: HashSet<usize>)
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            new_spec =~= LowInstance {
+                current_ballot: old_spec.current_ballot,
+                promised: old_spec.promised,
+                proposed_value: old_spec.proposed_value,
+                accepted: old_spec.accepted.insert(key.into_spec(), Set::new(
+                    |sender: nat| sender <= usize::MAX && value@.contains(sender as usize)
+                )),
+                accept_ballot: old_spec.accept_ballot,
+                accept_value: old_spec.accept_value,
+                decide_value: old_spec.decide_value,
+            }
+        })
+        {
+            self.accepted.insert(key, value);
+
+            proof! {
+                axiom_ballot_obeys_hash_table_key_model();
+                broadcast use axiom_random_state_builds_valid_hashers;
+
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+                assert(new_spec.accepted =~= old_spec.accepted.insert(key.into_spec(), Set::new(
+                    |sender: nat| sender <= usize::MAX && value@.contains(sender as usize)
+                )));
+            };
         }
     }
 
@@ -345,32 +412,47 @@ verus! {
         })
         {
             let current_instance = self.get_current_instance();
-
-            // TODO: Don't assume. Write valid proof.
-            proof! { assume(current_instance.current_ballot.num == old(self).into_spec().instances[self.current_instance as nat].current_ballot.num); }; // Corresponds: old_spec.instances[key].current_ballot.num < u64::MAX
             let new_ballot = Ballot { num: current_instance.current_ballot.num + 1, pid: c.id, };
 
+            let promised_value = HashMap::<usize, Option<(Ballot, Value)>>::new();
+            let accepted_value = HashSet::<usize>::new();
+
+            proof! {
+                let promised_value_spec = Map::new(
+                    |sender: nat| sender <= usize::MAX && promised_value@.contains_key(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = promised_value@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                );
+
+                assert(promised_value_spec =~= Map::empty());
+            };
+
             let mut updated_instance = current_instance.clone();
-            updated_instance.promised.insert(new_ballot.clone(), HashMap::new());
-            updated_instance.accepted.insert(new_ballot.clone(), HashSet::new());
+            updated_instance.fill_promised(new_ballot.clone(), promised_value);
+            updated_instance.fill_accepted(new_ballot.clone(), accepted_value);
+
+            proof! {
+                let new_ballot_spec = new_ballot.into_spec();
+                let current_instance_spec = current_instance.into_spec();
+
+                assert(updated_instance.into_spec() =~= LowInstance {
+                    current_ballot: current_instance_spec.current_ballot,
+                    promised: current_instance_spec.promised.insert(new_ballot_spec, Map::empty()),
+                    proposed_value: current_instance_spec.proposed_value,
+                    accepted: current_instance_spec.accepted.insert(new_ballot_spec, Set::empty()),
+                    accept_ballot: current_instance_spec.accept_ballot,
+                    accept_value: current_instance_spec.accept_value,
+                    decide_value: current_instance_spec.decide_value,
+                });
+            };
 
             self.instances.insert(self.current_instance, updated_instance);
 
             proof! {
-                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
-                let key = self.current_instance as nat;
-                let new_ballot_spec = new_ballot.into_spec();
+                broadcast use axiom_u64_obeys_hash_table_key_model;
+                broadcast use axiom_random_state_builds_valid_hashers;
 
-                // TODO: Don't assume. Write valid proof.
-                assume(new_spec.instances == old_spec.instances.insert(key, LowInstance {
-                    current_ballot: old_spec.instances[key].current_ballot,
-                    promised: old_spec.instances[key].promised.insert(new_ballot_spec, Map::empty()),
-                    proposed_value: old_spec.instances[key].proposed_value,
-                    accepted: old_spec.instances[key].accepted.insert(new_ballot_spec, Set::empty()),
-                    accept_ballot: old_spec.instances[key].accept_ballot,
-                    accept_value: old_spec.instances[key].accept_value,
-                    decide_value: old_spec.instances[key].decide_value,
-                }));
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+                assert(new_spec.instances == old_spec.instances.insert(self.current_instance as nat, updated_instance.into_spec()));
             };
 
             Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
