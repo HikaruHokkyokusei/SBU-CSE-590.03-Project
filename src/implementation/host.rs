@@ -298,10 +298,11 @@ verus! {
             self.instances.insert(self.current_instance, new_instance);
 
             proof! {
-                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+                broadcast use axiom_u64_obeys_hash_table_key_model;
+                broadcast use axiom_random_state_builds_valid_hashers;
 
-                // TODO: Don't assume. Write valid proof.
-                assume(new_spec.instances == old_spec.instances.insert(self.current_instance as nat, new_instance.into_spec()));
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+                assert(new_spec.instances == old_spec.instances.insert(self.current_instance as nat, new_instance.into_spec()));
             };
 
             None
