@@ -4,6 +4,7 @@ use crate::distributed_system::{
         host::{
             accept as low_accept, accepted as low_accepted, decide as low_decide,
             get_max_accepted_value as low_get_max_accepted_value, init_request as low_init_request,
+            max_accepted_value_by_ballot as low_max_accepted_value_by_ballot,
             promise as low_promise, promised as low_promised, send_accept as low_send_accept,
             send_decide as low_send_decide, send_prepare as low_send_prepare, Ballot as LowBallot,
             Constants as LowConstants, Instance as LowInstance, Variables as LowVariables,
@@ -78,6 +79,23 @@ verus! {
             Self {
                 num: spec_ballot.num as u64,
                 pid: spec_ballot.pid as usize,
+            }
+        }
+
+        pub exec fn cmp(&self, other: &Ballot) -> (res: i8)
+        ensures
+            res == self.into_spec().cmp(&other.into_spec()),
+        {
+            if (self.num < other.num) {
+                -1
+            } else if (self.num > other.num) {
+                1
+            } else if (self.pid < other.pid) {
+                -1
+            } else if (self.pid > other.pid) {
+                1
+            } else {
+                0
             }
         }
     }
@@ -601,6 +619,50 @@ verus! {
             }
 
             None
+        }
+
+        pub open spec fn max_accepted_value_by_ballot_spec(a: Option<(Ballot, Value)>, b: Option<(Ballot, Value)>) -> Option<(Ballot, Value)> {
+            if (a.is_none() && b.is_none()) {
+                None
+            } else if (a.is_none()) {
+                b
+            } else if (b.is_none()) {
+                a
+            } else {
+                let (a, b) = (a.unwrap(), b.unwrap());
+                if (a.0.into_spec().cmp(&b.0.into_spec()) >= 0) {
+                    Some(a)
+                } else {
+                    Some(b)
+                }
+            }
+        }
+
+        pub exec fn max_accepted_value_by_ballot(a: Option<(Ballot, Value)>, b: Option<(Ballot, Value)>) -> (res: Option<(Ballot, Value)>)
+        ensures ({
+            let (a_spec, b_spec) = (
+                if let Some((ballot, value)) = a { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                if let Some((ballot, value)) = b { Some((ballot.into_spec(), value as SpecValue)) } else { None }
+            );
+
+            &&& (if let Some((ballot, value)) = res { Some((ballot.into_spec(), value as SpecValue)) } else { None }) == low_max_accepted_value_by_ballot(a_spec, b_spec)
+            &&& res == Variables::max_accepted_value_by_ballot_spec(a, b)
+        })
+        {
+            if (a.is_none() && b.is_none()) {
+                None
+            } else if (a.is_none()) {
+                b
+            } else if (b.is_none()) {
+                a
+            } else {
+                let (a, b) = (a.unwrap(), b.unwrap());
+                if (a.0.cmp(&b.0) >= 0) {
+                    Some(a)
+                } else {
+                    Some(b)
+                }
+            }
         }
 
         pub exec fn get_max_accepted_value(accepted_map: &HashMap<usize, Option<(Ballot, Value)>>) -> (res: Option<(Ballot, Value)>)
