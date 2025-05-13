@@ -2,10 +2,10 @@ use super::{Message, Value};
 use crate::distributed_system::{
     low_level::{
         host::{
-            get_max_accepted_value as low_get_max_accepted_value, init_request as low_init_request,
-            promise as low_promise, promised as low_promised, send_accept as low_send_accept,
-            send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
-            Instance as LowInstance, Variables as LowVariables,
+            accept as low_accept, get_max_accepted_value as low_get_max_accepted_value,
+            init_request as low_init_request, promise as low_promise, promised as low_promised,
+            send_accept as low_send_accept, send_prepare as low_send_prepare, Ballot as LowBallot,
+            Constants as LowConstants, Instance as LowInstance, Variables as LowVariables,
         },
         NetworkOperation,
     },
@@ -498,7 +498,7 @@ verus! {
         ensures ({
             let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
             let key = self.current_instance as nat;
-            let ballot = Ballot { num: new_spec.instances[key].current_ballot.num as u64, pid: new_spec.instances[key].current_ballot.pid as usize, };
+            let ballot = Ballot::from_spec(new_spec.instances[key].current_ballot);
 
             &&& new_spec.well_formed(&c.into_spec())
             &&& self.current_instance == old(self).current_instance
@@ -668,6 +668,53 @@ verus! {
             self.upsert_current_instance(updated_instance);
 
             Some(Message::Accept { key: self.current_instance, ballot, value: value_to_propose })
+        }
+
+        pub exec fn accept(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& recv.is_some()
+            &&& recv.unwrap() is Accept
+            &&& {
+                    let recv = recv.unwrap();
+                    let (msg_key, ballot, value) = (recv->Accept_key as nat, recv->Accept_ballot.into_spec(), recv->Accept_value as SpecValue);
+
+                    &&& msg_key == key
+                    &&& old_spec.instances.contains_key(key)
+                    &&& ballot.cmp(&old_spec.instances[key].current_ballot) >= 0
+                }
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+            let key = self.current_instance as nat;
+            let ballot = Ballot::from_spec(new_spec.instances[key].current_ballot);
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send == Some(Message::Accepted { key: key as u64, sender: c.id, ballot })
+            &&& low_accept(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        })
+        {
+            if let Some(Message::Accept { key, ballot, value }) = recv {
+                proof! { assert(key == self.current_instance); };
+
+                let current_instance = self.get_current_instance();
+
+                let mut updated_instance = current_instance.clone();
+                updated_instance.current_ballot = ballot.clone();
+                updated_instance.accept_ballot = Some(ballot.clone());
+                updated_instance.accept_value = Some(value);
+
+                self.upsert_current_instance(updated_instance);
+
+                Some(Message::Accepted { key, sender: c.id, ballot })
+            } else {
+                proof! { assert(false); };
+                None
+            }
         }
     }
 }
