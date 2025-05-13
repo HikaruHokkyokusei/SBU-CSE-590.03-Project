@@ -2,7 +2,7 @@ use super::{Message, Value};
 use crate::distributed_system::{
     low_level::{
         host::{
-            accept as low_accept, accepted as low_accepted,
+            accept as low_accept, accepted as low_accepted, decide as low_decide,
             get_max_accepted_value as low_get_max_accepted_value, init_request as low_init_request,
             promise as low_promise, promised as low_promised, send_accept as low_send_accept,
             send_decide as low_send_decide, send_prepare as low_send_prepare, Ballot as LowBallot,
@@ -803,6 +803,46 @@ verus! {
             let value_to_decide = current_instance.proposed_value.get(&ballot).unwrap().clone();
 
             Some(Message::Decide { key: self.current_instance, ballot, value: value_to_decide })
+        }
+
+        pub exec fn decide(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& recv.is_some()
+            &&& recv.unwrap() is Decide
+            &&& {
+                    let recv = recv.unwrap();
+                    let (msg_key, ballot, value) = (recv->Decide_key as nat, recv->Decide_ballot.into_spec(), recv->Accept_value as SpecValue);
+
+                    &&& msg_key == key
+                    &&& old_spec.instances.contains_key(key)
+                    &&& ballot.cmp(&old_spec.instances[key].current_ballot) == 1
+                }
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+            let expected_value = recv.unwrap()->Decide_value as SpecValue;
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send.is_none()
+            &&& low_decide(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send), expected_value)
+        })
+        {
+            if let Some(Message::Decide { key, ballot, value }) = recv {
+                let current_instance = self.get_current_instance();
+
+                let mut updated_instance = current_instance.clone();
+                updated_instance.current_ballot = ballot.clone();
+                updated_instance.decide_value = Some(value);
+
+                self.upsert_current_instance(updated_instance);
+            }
+
+            None
         }
     }
 }
