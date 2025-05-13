@@ -333,6 +333,27 @@ verus! {
             proof! { broadcast use group_hash_axioms; };
             current_instance.unwrap()
         }
+
+        pub exec fn upsert_current_instance(&mut self, instance: Instance)
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& self.current_instance == old(self).current_instance
+            &&& new_spec.instances == old_spec.instances.insert(self.current_instance as nat, instance.into_spec())
+        })
+        {
+            self.instances.insert(self.current_instance, instance);
+
+            proof! {
+                broadcast use axiom_u64_obeys_hash_table_key_model;
+                broadcast use axiom_random_state_builds_valid_hashers;
+
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+                assert(self.current_instance == old(self).current_instance);
+                assert(new_spec.instances =~= old_spec.instances.insert(self.current_instance as nat, instance.into_spec()));
+            };
+        }
     }
 
     impl Variables {
@@ -372,17 +393,7 @@ verus! {
             &&& low_init_request(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
         })
         {
-            let new_instance = Instance::new();
-            self.instances.insert(self.current_instance, new_instance);
-
-            proof! {
-                broadcast use axiom_u64_obeys_hash_table_key_model;
-                broadcast use axiom_random_state_builds_valid_hashers;
-
-                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
-                assert(new_spec.instances =~= old_spec.instances.insert(self.current_instance as nat, new_instance.into_spec()));
-            };
-
+            self.upsert_current_instance(Instance::new());
             None
         }
 
@@ -445,15 +456,7 @@ verus! {
                 });
             };
 
-            self.instances.insert(self.current_instance, updated_instance);
-
-            proof! {
-                broadcast use axiom_u64_obeys_hash_table_key_model;
-                broadcast use axiom_random_state_builds_valid_hashers;
-
-                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
-                assert(new_spec.instances == old_spec.instances.insert(self.current_instance as nat, updated_instance.into_spec()));
-            };
+            self.upsert_current_instance(updated_instance);
 
             Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
         }
