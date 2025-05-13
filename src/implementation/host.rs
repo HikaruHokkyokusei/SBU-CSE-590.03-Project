@@ -235,18 +235,19 @@ verus! {
         ensures ({
             let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
 
-            new_spec =~= LowInstance {
-                current_ballot: old_spec.current_ballot,
-                promised: old_spec.promised.insert(key.into_spec(), Map::new(
-                    |sender: nat| sender <= usize::MAX && value@.contains_key(sender as usize),
-                    |sender: nat| if let Some((ballot, value)) = value@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
-                )),
-                proposed_value: old_spec.proposed_value,
-                accepted: old_spec.accepted,
-                accept_ballot: old_spec.accept_ballot,
-                accept_value: old_spec.accept_value,
-                decide_value: old_spec.decide_value,
-            }
+            &&& new_spec =~= LowInstance {
+                    current_ballot: old_spec.current_ballot,
+                    promised: old_spec.promised.insert(key.into_spec(), Map::new(
+                        |sender: nat| sender <= usize::MAX && value@.contains_key(sender as usize),
+                        |sender: nat| if let Some((ballot, value)) = value@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                    )),
+                    proposed_value: old_spec.proposed_value,
+                    accepted: old_spec.accepted,
+                    accept_ballot: old_spec.accept_ballot,
+                    accept_value: old_spec.accept_value,
+                    decide_value: old_spec.decide_value,
+                }
+            &&& self.promised@ =~= old(self).promised@.insert(key, value)
         })
         {
             self.promised.insert(key, value);
@@ -263,21 +264,49 @@ verus! {
             };
         }
 
+        pub exec fn fill_proposed_value(&mut self, key: Ballot, value: Value)
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& new_spec =~= LowInstance {
+                    current_ballot: old_spec.current_ballot,
+                    promised: old_spec.promised,
+                    proposed_value: old_spec.proposed_value.insert(key.into_spec(), value as SpecValue),
+                    accepted: old_spec.accepted,
+                    accept_ballot: old_spec.accept_ballot,
+                    accept_value: old_spec.accept_value,
+                    decide_value: old_spec.decide_value,
+                }
+            &&& self.proposed_value@ =~= self.proposed_value@.insert(key, value)
+        })
+        {
+            self.proposed_value.insert(key, value);
+
+            proof! {
+                axiom_ballot_obeys_hash_table_key_model();
+                broadcast use axiom_random_state_builds_valid_hashers;
+
+                let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+                assert(new_spec.proposed_value =~= old_spec.proposed_value.insert(key.into_spec(), value as SpecValue));
+            };
+        }
+
         pub exec fn fill_accepted(&mut self, key: Ballot, value: HashSet<usize>)
         ensures ({
             let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
 
-            new_spec =~= LowInstance {
-                current_ballot: old_spec.current_ballot,
-                promised: old_spec.promised,
-                proposed_value: old_spec.proposed_value,
-                accepted: old_spec.accepted.insert(key.into_spec(), Set::new(
-                    |sender: nat| sender <= usize::MAX && value@.contains(sender as usize)
-                )),
-                accept_ballot: old_spec.accept_ballot,
-                accept_value: old_spec.accept_value,
-                decide_value: old_spec.decide_value,
-            }
+            &&& new_spec =~= LowInstance {
+                    current_ballot: old_spec.current_ballot,
+                    promised: old_spec.promised,
+                    proposed_value: old_spec.proposed_value,
+                    accepted: old_spec.accepted.insert(key.into_spec(), Set::new(
+                        |sender: nat| sender <= usize::MAX && value@.contains(sender as usize)
+                    )),
+                    accept_ballot: old_spec.accept_ballot,
+                    accept_value: old_spec.accept_value,
+                    decide_value: old_spec.decide_value,
+                }
+            &&& self.accepted@ =~= old(self).accepted@.insert(key, value)
         })
         {
             self.accepted.insert(key, value);
@@ -340,6 +369,7 @@ verus! {
 
             &&& self.current_instance == old(self).current_instance
             &&& new_spec.instances == old_spec.instances.insert(self.current_instance as nat, instance.into_spec())
+            &&& self.instances@ =~= old(self).instances@.insert(self.current_instance, instance)
         })
         {
             self.instances.insert(self.current_instance, instance);
