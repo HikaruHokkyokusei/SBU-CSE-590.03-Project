@@ -425,36 +425,21 @@ verus! {
             let current_instance = self.get_current_instance();
             let new_ballot = Ballot { num: current_instance.current_ballot.num + 1, pid: c.id, };
 
-            let promised_value = HashMap::<usize, Option<(Ballot, Value)>>::new();
-            let accepted_value = HashSet::<usize>::new();
+            let accepted_map = HashMap::<usize, Option<(Ballot, Value)>>::new();
+            let acceptor_set = HashSet::<usize>::new();
 
             proof! {
-                let promised_value_spec = Map::new(
-                    |sender: nat| sender <= usize::MAX && promised_value@.contains_key(sender as usize),
-                    |sender: nat| if let Some((ballot, value)) = promised_value@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                let accepted_map_spec = Map::new(
+                    |sender: nat| sender <= usize::MAX && accepted_map@.contains_key(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
                 );
 
-                assert(promised_value_spec =~= Map::empty());
+                assert(accepted_map_spec =~= Map::empty());
             };
 
             let mut updated_instance = current_instance.clone();
-            updated_instance.fill_promised(new_ballot.clone(), promised_value);
-            updated_instance.fill_accepted(new_ballot.clone(), accepted_value);
-
-            proof! {
-                let new_ballot_spec = new_ballot.into_spec();
-                let current_instance_spec = current_instance.into_spec();
-
-                assert(updated_instance.into_spec() =~= LowInstance {
-                    current_ballot: current_instance_spec.current_ballot,
-                    promised: current_instance_spec.promised.insert(new_ballot_spec, Map::empty()),
-                    proposed_value: current_instance_spec.proposed_value,
-                    accepted: current_instance_spec.accepted.insert(new_ballot_spec, Set::empty()),
-                    accept_ballot: current_instance_spec.accept_ballot,
-                    accept_value: current_instance_spec.accept_value,
-                    decide_value: current_instance_spec.decide_value,
-                });
-            };
+            updated_instance.fill_promised(new_ballot.clone(), accepted_map);
+            updated_instance.fill_accepted(new_ballot.clone(), acceptor_set);
 
             self.upsert_current_instance(updated_instance);
 
