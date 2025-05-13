@@ -5,8 +5,8 @@ use crate::distributed_system::{
             accept as low_accept, accepted as low_accepted,
             get_max_accepted_value as low_get_max_accepted_value, init_request as low_init_request,
             promise as low_promise, promised as low_promised, send_accept as low_send_accept,
-            send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
-            Instance as LowInstance, Variables as LowVariables,
+            send_decide as low_send_decide, send_prepare as low_send_prepare, Ballot as LowBallot,
+            Constants as LowConstants, Instance as LowInstance, Variables as LowVariables,
         },
         NetworkOperation,
     },
@@ -766,6 +766,43 @@ verus! {
             }
 
             None
+        }
+
+        pub exec fn send_decide(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& old_spec.instances.contains_key(key)
+            &&& old_spec.instances[key].proposed_value.contains_key(old_spec.instances[key].current_ballot)
+            &&& old_spec.instances[key].accepted.contains_key(old_spec.instances[key].current_ballot)
+            &&& old_spec.instances[key].accepted[old_spec.instances[key].current_ballot].len() > c.num_failures
+            &&& recv.is_none()
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send == Some(Message::Decide {
+                    key: self.current_instance,
+                    ballot: self.instances@[self.current_instance].current_ballot,
+                    value: self.instances@[self.current_instance].proposed_value@[self.instances@[self.current_instance].current_ballot]
+                })
+            &&& low_send_decide(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        })
+        {
+            let current_instance = self.get_current_instance();
+            let ballot = current_instance.current_ballot.clone();
+
+            proof! {
+                axiom_ballot_obeys_hash_table_key_model();
+                broadcast use group_hash_axioms;
+            };
+            let value_to_decide = current_instance.proposed_value.get(&ballot).unwrap().clone();
+
+            Some(Message::Decide { key: self.current_instance, ballot, value: value_to_decide })
         }
     }
 }
