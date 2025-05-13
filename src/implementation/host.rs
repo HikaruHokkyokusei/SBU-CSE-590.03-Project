@@ -2,7 +2,8 @@ use super::{Message, Value};
 use crate::distributed_system::{
     low_level::{
         host::{
-            init_request as low_init_request, promise as low_promise, promised as low_promised,
+            get_max_accepted_value as low_get_max_accepted_value, init_request as low_init_request,
+            promise as low_promise, promised as low_promised, send_accept as low_send_accept,
             send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
             Instance as LowInstance, Variables as LowVariables,
         },
@@ -600,6 +601,73 @@ verus! {
                 proof! { assert(false); };
                 None
             }
+        }
+
+        pub exec fn get_max_accepted_value(accepted_map: &HashMap<usize, Option<(Ballot, Value)>>) -> (res: Option<(Ballot, Value)>)
+        requires ({
+            let accepted_map_spec = Map::new(
+                |sender: nat| sender <= usize::MAX && accepted_map@.contains_key(sender as usize),
+                |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+            );
+
+            &&& accepted_map_spec.dom().finite()
+        })
+        ensures ({
+            let accepted_map_spec = Map::new(
+                |sender: nat| sender <= usize::MAX && accepted_map@.contains_key(sender as usize),
+                |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+            );
+
+            &&& if let Some((ballot, value)) = res { Some((ballot.into_spec(), value as SpecValue)) } else { None } == low_get_max_accepted_value(accepted_map_spec)
+        })
+        {
+            // TODO: Don't assume. Add valid proof...
+            proof! { assume(false); };
+            None // Calculate the correct value before returning...
+        }
+
+        pub exec fn send_accept(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& old_spec.instances.contains_key(key)
+            &&& old_spec.instances[key].promised.contains_key(old_spec.instances[key].current_ballot)
+            &&& old_spec.instances[key].promised[old_spec.instances[key].current_ballot].dom().finite()
+            &&& old_spec.instances[key].promised[old_spec.instances[key].current_ballot].len() > c.num_failures
+            &&& !old_spec.instances[key].proposed_value.contains_key(old_spec.instances[key].current_ballot)
+            &&& recv.is_none()
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send == Some(Message::Accept {
+                    key: self.current_instance,
+                    ballot: self.instances@[self.current_instance].current_ballot,
+                    value: self.instances@[self.current_instance].proposed_value@[self.instances@[self.current_instance].current_ballot]
+                })
+            &&& low_send_accept(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        })
+        {
+            let current_instance = self.get_current_instance();
+            let ballot = current_instance.current_ballot.clone();
+
+            proof! {
+                axiom_ballot_obeys_hash_table_key_model();
+                broadcast use group_hash_axioms;
+            };
+            let accepted_map = current_instance.promised.get(&ballot).unwrap();
+            let value_to_propose = if let Some((ballot, value)) = Variables::get_max_accepted_value(accepted_map) { value } else { c.id };
+
+            let mut updated_instance = current_instance.clone();
+            updated_instance.fill_proposed_value(ballot.clone(), value_to_propose);
+
+            self.upsert_current_instance(updated_instance);
+
+            Some(Message::Accept { key: self.current_instance, ballot, value: value_to_propose })
         }
     }
 }
