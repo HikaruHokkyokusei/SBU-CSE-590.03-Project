@@ -2,10 +2,11 @@ use super::{Message, Value};
 use crate::distributed_system::{
     low_level::{
         host::{
-            accept as low_accept, get_max_accepted_value as low_get_max_accepted_value,
-            init_request as low_init_request, promise as low_promise, promised as low_promised,
-            send_accept as low_send_accept, send_prepare as low_send_prepare, Ballot as LowBallot,
-            Constants as LowConstants, Instance as LowInstance, Variables as LowVariables,
+            accept as low_accept, accepted as low_accepted,
+            get_max_accepted_value as low_get_max_accepted_value, init_request as low_init_request,
+            promise as low_promise, promised as low_promised, send_accept as low_send_accept,
+            send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
+            Instance as LowInstance, Variables as LowVariables,
         },
         NetworkOperation,
     },
@@ -21,6 +22,13 @@ use vstd::{
 };
 
 verus! {
+    pub assume_specification<K, S> [std::collections::HashSet::clone] (original: &HashSet<K, S>) -> (clone: std::collections::HashSet<K, S>)
+    where
+        K: Clone,
+        S: Clone,
+    ensures
+        original == clone;
+
     pub assume_specification<K, V, S> [std::collections::HashMap::clone] (original: &HashMap<K, V, S>) -> (clone: std::collections::HashMap<K, V, S>)
     where
         K: Clone,
@@ -513,8 +521,6 @@ verus! {
         })
         {
             if let Some(Message::Prepare { key, ballot }) = recv {
-                proof! { assert(key == self.current_instance); };
-
                 let current_instance = self.get_current_instance();
 
                 let mut updated_instance = current_instance.clone();
@@ -564,15 +570,12 @@ verus! {
         })
         {
             if let Some(Message::Promise { key, sender, ballot, accepted }) = recv {
-                proof! { assert(key == self.current_instance); };
-
                 let current_instance = self.get_current_instance();
 
                 proof! {
                     axiom_ballot_obeys_hash_table_key_model();
                     broadcast use group_hash_axioms;
                 };
-
                 let current_accepted_map = current_instance.promised.get(&ballot).unwrap();
                 let mut updated_accepted_map = current_accepted_map.clone();
                 updated_accepted_map.insert(sender, accepted);
@@ -595,12 +598,9 @@ verus! {
                 updated_instance.fill_promised(ballot, updated_accepted_map);
 
                 self.upsert_current_instance(updated_instance);
-
-                None
-            } else {
-                proof! { assert(false); };
-                None
             }
+
+            None
         }
 
         pub exec fn get_max_accepted_value(accepted_map: &HashMap<usize, Option<(Ballot, Value)>>) -> (res: Option<(Ballot, Value)>)
@@ -699,8 +699,6 @@ verus! {
         })
         {
             if let Some(Message::Accept { key, ballot, value }) = recv {
-                proof! { assert(key == self.current_instance); };
-
                 let current_instance = self.get_current_instance();
 
                 let mut updated_instance = current_instance.clone();
@@ -715,6 +713,59 @@ verus! {
                 proof! { assert(false); };
                 None
             }
+        }
+
+        pub exec fn accepted(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& recv.is_some()
+            &&& recv.unwrap() is Accepted
+            &&& {
+                    let recv = recv.unwrap();
+                    let (msg_key, sender, ballot) = (recv->Accepted_key as nat, recv->Accepted_sender as nat, recv->Accepted_ballot.into_spec());
+
+                    &&& msg_key == key
+                    &&& old_spec.instances.contains_key(key)
+                    &&& old_spec.instances[key].accepted.contains_key(ballot)
+                }
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send.is_none()
+            &&& low_accepted(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        })
+        {
+            if let Some(Message::Accepted { key, sender, ballot }) = recv {
+                let current_instance = self.get_current_instance();
+
+                proof! {
+                    axiom_ballot_obeys_hash_table_key_model();
+                    broadcast use group_hash_axioms;
+                };
+                let current_acceptor_set = current_instance.accepted.get(&ballot).unwrap();
+                let mut updated_acceptor_set = current_acceptor_set.clone();
+                updated_acceptor_set.insert(sender);
+
+                proof! {
+                    let current_acceptor_set_spec = Set::new(|sender: nat| sender <= usize::MAX && current_acceptor_set@.contains(sender as usize));
+                    let updated_acceptor_set_spec = Set::new(|sender: nat| sender <= usize::MAX && updated_acceptor_set@.contains(sender as usize));
+
+                    assert(updated_acceptor_set_spec =~= current_acceptor_set_spec.insert(sender as nat));
+                };
+
+                let mut updated_instance = current_instance.clone();
+                updated_instance.fill_accepted(ballot, updated_acceptor_set);
+
+                self.upsert_current_instance(updated_instance);
+            }
+
+            None
         }
     }
 }
