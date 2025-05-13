@@ -2,9 +2,9 @@ use super::{Message, Value};
 use crate::distributed_system::{
     low_level::{
         host::{
-            init_request as low_init_request, send_prepare as low_send_prepare,
-            Ballot as LowBallot, Constants as LowConstants, Instance as LowInstance,
-            Variables as LowVariables,
+            init_request as low_init_request, promised as low_promised,
+            send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
+            Instance as LowInstance, Variables as LowVariables,
         },
         NetworkOperation,
     },
@@ -444,6 +444,74 @@ verus! {
             self.upsert_current_instance(updated_instance);
 
             Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
+        }
+
+        pub exec fn promised(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& recv.is_some()
+            &&& recv.unwrap() is Promise
+            &&& {
+                    let recv = recv.unwrap();
+                    let (msg_key, sender, ballot, accepted) = (recv->Promise_key as nat, recv->Promise_sender as nat, recv->Promise_ballot.into_spec(), recv->Promise_accepted);
+                    let accepted = if let Some((ballot, value)) = accepted { Some((ballot.into_spec(), value as SpecValue)) } else { None };
+
+                    &&& msg_key == key
+                    &&& old_spec.instances.contains_key(key)
+                    &&& old_spec.instances[key].promised.contains_key(ballot)
+                    &&& !old_spec.instances[key].proposed_value.contains_key(ballot)
+                }
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send.is_none()
+            &&& low_promised(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        })
+        {
+            if let Some(Message::Promise { key, sender, ballot, accepted }) = recv {
+                proof! { assert(key == self.current_instance); };
+
+                let current_instance = self.get_current_instance();
+
+                proof! {
+                    axiom_ballot_obeys_hash_table_key_model();
+                    broadcast use group_hash_axioms;
+                };
+
+                let current_accepted_map = current_instance.promised.get(&ballot).unwrap();
+                let mut updated_accepted_map = current_accepted_map.clone();
+                updated_accepted_map.insert(sender, accepted);
+
+                proof! {
+                    let current_accepted_map_spec = Map::new(
+                        |sender: nat| sender <= usize::MAX && current_accepted_map@.contains_key(sender as usize),
+                        |sender: nat| if let Some((ballot, value)) = current_accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                    );
+
+                    let updated_accepted_map_spec = Map::new(
+                        |sender: nat| sender <= usize::MAX && updated_accepted_map@.contains_key(sender as usize),
+                        |sender: nat| if let Some((ballot, value)) = updated_accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                    );
+
+                    assert(updated_accepted_map_spec =~= current_accepted_map_spec.insert(sender as nat, if let Some((ballot, value)) = accepted { Some((ballot.into_spec(), value as SpecValue)) } else { None }));
+                };
+
+                let mut updated_instance = current_instance.clone();
+                updated_instance.fill_promised(ballot, updated_accepted_map);
+
+                self.upsert_current_instance(updated_instance);
+
+                None
+            } else {
+                proof! { assert(false); };
+                None
+            }
         }
     }
 }
