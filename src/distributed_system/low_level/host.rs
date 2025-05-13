@@ -121,7 +121,6 @@ verus! {
             &&& instance == key
             &&& u.instances.contains_key(instance)
             &&& ballot.cmp(&u.instances[instance].current_ballot) == 1
-            &&& v.instances[instance].current_ballot == ballot
             &&& v.instances == u.instances.insert(instance, Instance {
                     current_ballot: ballot,
                     promised: u.instances[instance].promised,

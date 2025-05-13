@@ -2,7 +2,7 @@ use super::{Message, Value};
 use crate::distributed_system::{
     low_level::{
         host::{
-            init_request as low_init_request, promised as low_promised,
+            init_request as low_init_request, promise as low_promise, promised as low_promised,
             send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
             Instance as LowInstance, Variables as LowVariables,
         },
@@ -177,7 +177,7 @@ verus! {
                 instances: Map::new(
                     |instance: nat| instance <= u64::MAX && self.instances@.contains_key(instance as u64),
                     |instance: nat| self.instances@[instance as u64].into_spec(),
-                    ),
+                ),
             }
         }
     }
@@ -444,6 +444,64 @@ verus! {
             self.upsert_current_instance(updated_instance);
 
             Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
+        }
+
+        pub exec fn promise(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let key = old(self).current_instance as nat;
+
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& recv.is_some()
+            &&& recv.unwrap() is Prepare
+            &&& {
+                    let recv = recv.unwrap();
+                    let (msg_key, ballot) = (recv->Prepare_key as nat, recv->Prepare_ballot.into_spec());
+
+                    &&& msg_key == key
+                    &&& old_spec.instances.contains_key(key)
+                    &&& ballot.cmp(&old_spec.instances[key].current_ballot) == 1
+                }
+            &&& old_spec.instances[key].accept_ballot.is_some() == old_spec.instances[key].accept_value.is_some()
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+            let key = self.current_instance as nat;
+            let ballot = Ballot { num: new_spec.instances[key].current_ballot.num as u64, pid: new_spec.instances[key].current_ballot.pid as usize, };
+
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& self.current_instance == old(self).current_instance
+            &&& send == if (new_spec.instances[key].accept_ballot.is_some()) {
+                    let accept_ballot = Ballot::from_spec(new_spec.instances[key].accept_ballot.unwrap());
+                    let accept_value = new_spec.instances[key].accept_value.unwrap() as Value;
+                    Some(Message::Promise { key: self.current_instance, sender: c.id, ballot, accepted: Some((accept_ballot, accept_value)), })
+                } else {
+                    Some(Message::Promise { key: self.current_instance, sender: c.id, ballot, accepted: None, })
+                }
+            &&& low_promise(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+        })
+        {
+            if let Some(Message::Prepare { key, ballot }) = recv {
+                proof! { assert(key == self.current_instance); };
+
+                let current_instance = self.get_current_instance();
+
+                let mut updated_instance = current_instance.clone();
+                updated_instance.current_ballot = ballot.clone();
+
+                let send_message = if (current_instance.accept_ballot.is_some()) {
+                    Some(Message::Promise { key: self.current_instance, sender: c.id, ballot, accepted: Some((current_instance.accept_ballot.as_ref().unwrap().clone(), current_instance.accept_value.unwrap().clone())) })
+                } else {
+                    Some(Message::Promise { key: self.current_instance, sender: c.id, ballot, accepted: None })
+                };
+
+                self.upsert_current_instance(updated_instance);
+
+                send_message
+            } else {
+                proof! { assert(false); };
+                None
+            }
         }
 
         pub exec fn promised(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
