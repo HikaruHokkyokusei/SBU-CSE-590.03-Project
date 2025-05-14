@@ -1,7 +1,7 @@
 use crate::distributed_system::{
     low_level::{
         init as low_init, Constants as LowConstants, Message as LowMessage,
-        Variables as LowVariables,
+        NetworkOperation as LowNetworkOperation, Variables as LowVariables,
     },
     Value as SpecValue,
 };
@@ -159,6 +159,36 @@ verus! {
                     value: value as SpecValue,
                 },
             }
+        }
+    }
+
+    pub struct NetworkOperation {
+        pub recv: Option<Message>,
+        pub send: Option<Message>,
+    }
+
+    impl NetworkOperation {
+        pub open spec fn into_spec(&self) -> LowNetworkOperation {
+            LowNetworkOperation {
+                recv: if let Some(recv) = self.recv { Some(recv.into_spec()) } else { None },
+                send: if let Some(send) = self.send { Some(send.into_spec()) } else { None },
+            }
+        }
+
+        pub open spec fn from_messages_as_spec(recv: Option<Message>, send: Option<Message>) -> LowNetworkOperation
+        {
+            LowNetworkOperation {
+                recv: if let Some(recv) = recv { Some(recv.into_spec()) } else { None },
+                send: if let Some(send) = send { Some(send.into_spec()) } else { None },
+            }
+        }
+
+        pub exec fn from_messages(recv: Option<Message>, send: Option<Message>) -> (res: Self)
+        ensures
+            res.recv == recv,
+            res.send == send,
+        {
+            Self { recv, send }
         }
     }
 

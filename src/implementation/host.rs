@@ -1,18 +1,14 @@
-use super::{Message, Value};
+use super::{Message, NetworkOperation, Value};
 use crate::distributed_system::{
-    low_level::{
-        host::{
-            accept as low_accept, accepted as low_accepted, decide as low_decide,
-            get_max_accepted_value as low_get_max_accepted_value,
-            get_max_accepted_value_is_commutative, init_request as low_init_request,
-            max_accepted_value_by_ballot as low_max_accepted_value_by_ballot,
-            promise as low_promise, promised as low_promised,
-            same_accepted_ballots_in_accepted_map_have_same_accepted_value,
-            send_accept as low_send_accept, send_decide as low_send_decide,
-            send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
-            Instance as LowInstance, Variables as LowVariables,
-        },
-        NetworkOperation,
+    low_level::host::{
+        accept as low_accept, accepted as low_accepted, decide as low_decide,
+        get_max_accepted_value as low_get_max_accepted_value,
+        get_max_accepted_value_is_commutative, init_request as low_init_request,
+        max_accepted_value_by_ballot as low_max_accepted_value_by_ballot, promise as low_promise,
+        promised as low_promised, same_accepted_ballots_in_accepted_map_have_same_accepted_value,
+        send_accept as low_send_accept, send_decide as low_send_decide,
+        send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
+        Instance as LowInstance, Variables as LowVariables,
     },
     Value as SpecValue,
 };
@@ -423,13 +419,6 @@ verus! {
     }
 
     impl Variables {
-        pub open spec fn net_op(recv: Option<Message>, send: Option<Message>) -> NetworkOperation {
-            NetworkOperation {
-                recv: if let Some(recv) = recv { Some(recv.into_spec()) } else { None },
-                send: if let Some(send) = send { Some(send.into_spec()) } else { None },
-            }
-        }
-
         pub exec fn next_instance(&mut self, c: &Constants)
         requires ({
             &&& old(self).current_instance + 1 <= u64::MAX
@@ -456,7 +445,7 @@ verus! {
             &&& new_spec.well_formed(&c.into_spec())
             &&& self.current_instance == old(self).current_instance
             &&& send.is_none()
-            &&& low_init_request(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_init_request(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             self.upsert_current_instance(Instance::new());
@@ -485,7 +474,7 @@ verus! {
             &&& new_spec.well_formed(&c.into_spec())
             &&& self.current_instance == old(self).current_instance
             &&& send == Some(Message::Prepare { key: self.current_instance, ballot: new_ballot })
-            &&& low_send_prepare(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_send_prepare(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             let current_instance = self.get_current_instance();
@@ -544,7 +533,7 @@ verus! {
                 } else {
                     Some(Message::Promise { key: self.current_instance, sender: c.id, ballot, accepted: None, })
                 }
-            &&& low_promise(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_promise(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             if let Some(Message::Prepare { key, ballot }) = recv {
@@ -593,7 +582,7 @@ verus! {
             &&& new_spec.well_formed(&c.into_spec())
             &&& self.current_instance == old(self).current_instance
             &&& send.is_none()
-            &&& low_promised(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_promised(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             if let Some(Message::Promise { key, sender, ballot, accepted }) = recv {
@@ -843,7 +832,7 @@ verus! {
                     ballot: self.instances@[self.current_instance].current_ballot,
                     value: self.instances@[self.current_instance].proposed_value@[self.instances@[self.current_instance].current_ballot]
                 })
-            &&& low_send_accept(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_send_accept(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             let current_instance = self.get_current_instance();
@@ -889,7 +878,7 @@ verus! {
             &&& new_spec.well_formed(&c.into_spec())
             &&& self.current_instance == old(self).current_instance
             &&& send == Some(Message::Accepted { key: key as u64, sender: c.id, ballot })
-            &&& low_accept(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_accept(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             if let Some(Message::Accept { key, ballot, value }) = recv {
@@ -932,7 +921,7 @@ verus! {
             &&& new_spec.well_formed(&c.into_spec())
             &&& self.current_instance == old(self).current_instance
             &&& send.is_none()
-            &&& low_accepted(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_accepted(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             if let Some(Message::Accepted { key, sender, ballot }) = recv {
@@ -984,7 +973,7 @@ verus! {
                     ballot: self.instances@[self.current_instance].current_ballot,
                     value: self.instances@[self.current_instance].proposed_value@[self.instances@[self.current_instance].current_ballot]
                 })
-            &&& low_send_decide(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send))
+            &&& low_send_decide(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send))
         })
         {
             let current_instance = self.get_current_instance();
@@ -1023,7 +1012,7 @@ verus! {
             &&& new_spec.well_formed(&c.into_spec())
             &&& self.current_instance == old(self).current_instance
             &&& send.is_none()
-            &&& low_decide(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, Variables::net_op(recv, send), expected_value)
+            &&& low_decide(&c.into_spec(), &old_spec, &new_spec, old(self).current_instance as nat, NetworkOperation::from_messages_as_spec(recv, send), expected_value)
         })
         {
             if let Some(Message::Decide { key, ballot, value }) = recv {
