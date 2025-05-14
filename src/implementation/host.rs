@@ -1,40 +1,23 @@
 use super::{Message, NetworkOperation, Value};
-use crate::distributed_system::{
-    low_level::host::{
-        accept as low_accept, accepted as low_accepted, decide as low_decide,
-        get_max_accepted_value as low_get_max_accepted_value,
-        get_max_accepted_value_is_commutative, init_request as low_init_request,
-        max_accepted_value_by_ballot as low_max_accepted_value_by_ballot, promise as low_promise,
-        promised as low_promised, same_accepted_ballots_in_accepted_map_have_same_accepted_value,
-        send_accept as low_send_accept, send_decide as low_send_decide,
-        send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
-        Instance as LowInstance, Variables as LowVariables,
+use crate::{
+    axiom_ballot_obeys_hash_table_key_model,
+    distributed_system::{
+        low_level::host::{
+            accept as low_accept, accepted as low_accepted, decide as low_decide,
+            get_max_accepted_value as low_get_max_accepted_value,
+            get_max_accepted_value_is_commutative, init_request as low_init_request,
+            max_accepted_value_by_ballot as low_max_accepted_value_by_ballot,
+            promise as low_promise, promised as low_promised,
+            same_accepted_ballots_in_accepted_map_have_same_accepted_value,
+            send_accept as low_send_accept, send_decide as low_send_decide,
+            send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
+            Instance as LowInstance, Variables as LowVariables,
+        },
+        Value as SpecValue,
     },
-    Value as SpecValue,
 };
 use std::collections::{HashMap, HashSet};
-use vstd::{prelude::*, seq_lib::group_seq_properties, std_specs::hash::*};
-
-verus! {
-    pub assume_specification<K, S> [std::collections::HashSet::clone] (original: &HashSet<K, S>) -> (clone: std::collections::HashSet<K, S>)
-    where
-        K: Clone,
-        S: Clone,
-    ensures
-        original == clone;
-
-    pub assume_specification<K, V, S> [std::collections::HashMap::clone] (original: &HashMap<K, V, S>) -> (clone: std::collections::HashMap<K, V, S>)
-    where
-        K: Clone,
-        V: Clone,
-        S: Clone,
-    ensures
-        original == clone;
-
-    pub assume_specification<K, V, S> [std::collections::HashMap::is_empty] (hash_map: &HashMap<K, V, S>) -> (is_empty: bool)
-    ensures
-        is_empty == hash_map@.is_empty();
-}
+use vstd::{prelude::*, seq_lib::group_seq_properties, std_specs::hash::KeysAdditionalSpecFns};
 
 verus! {
     #[derive(Eq, PartialEq, std::hash::Hash)]
@@ -233,11 +216,6 @@ verus! {
         }
     }
 
-    pub proof fn axiom_ballot_obeys_hash_table_key_model()
-    ensures
-        #[trigger] obeys_key_model::<Ballot>(),
-    { admit(); }
-
     impl Instance {
         pub exec fn new() -> (res: Self)
         ensures ({
@@ -286,8 +264,6 @@ verus! {
 
             proof! {
                 axiom_ballot_obeys_hash_table_key_model();
-                broadcast use axiom_random_state_builds_valid_hashers;
-
                 let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
                 assert(new_spec.promised =~= old_spec.promised.insert(key.into_spec(), Map::new(
                     |sender: nat| sender <= usize::MAX && value@.contains_key(sender as usize),
@@ -316,8 +292,6 @@ verus! {
 
             proof! {
                 axiom_ballot_obeys_hash_table_key_model();
-                broadcast use axiom_random_state_builds_valid_hashers;
-
                 let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
                 assert(new_spec.proposed_value =~= old_spec.proposed_value.insert(key.into_spec(), value as SpecValue));
             };
@@ -345,8 +319,6 @@ verus! {
 
             proof! {
                 axiom_ballot_obeys_hash_table_key_model();
-                broadcast use axiom_random_state_builds_valid_hashers;
-
                 let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
                 assert(new_spec.accepted =~= old_spec.accepted.insert(key.into_spec(), Set::new(
                     |sender: nat| sender <= usize::MAX && value@.contains(sender as usize)
@@ -364,24 +336,10 @@ verus! {
             res.current_instance == 0,
             res.into_spec().instances =~= Map::empty(),
         {
-            let res = Self {
+            Self {
                 current_instance: 0,
                 instances: HashMap::new(),
-            };
-
-            let is_map_empty = res.instances.is_empty();
-            let map_size = res.instances.len();
-
-            proof! {
-                assert(is_map_empty);
-                broadcast use axiom_u64_obeys_hash_table_key_model;
-                broadcast use axiom_random_state_builds_valid_hashers;
-                broadcast use axiom_spec_hash_map_len;
-                assert(map_size == res.instances@.len());
-                assert(map_size == 0);
-            };
-
-            res
+            }
         }
 
         pub exec fn get_current_instance(&self) -> (res: &Instance)
@@ -391,7 +349,6 @@ verus! {
             *res == self.instances@[self.current_instance],
         {
             let current_instance = self.instances.get(&self.current_instance);
-            proof! { broadcast use group_hash_axioms; };
             current_instance.unwrap()
         }
 
@@ -407,11 +364,7 @@ verus! {
             self.instances.insert(self.current_instance, instance);
 
             proof! {
-                broadcast use axiom_u64_obeys_hash_table_key_model;
-                broadcast use axiom_random_state_builds_valid_hashers;
-
                 let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
-
                 assert(self.current_instance == old(self).current_instance);
                 assert(new_spec.instances =~= old_spec.instances.insert(self.current_instance as nat, instance.into_spec()));
             };
@@ -588,10 +541,7 @@ verus! {
             if let Some(Message::Promise { key, sender, ballot, accepted }) = recv {
                 let current_instance = self.get_current_instance();
 
-                proof! {
-                    axiom_ballot_obeys_hash_table_key_model();
-                    broadcast use group_hash_axioms;
-                };
+                proof! { axiom_ballot_obeys_hash_table_key_model(); };
                 let current_accepted_map = current_instance.promised.get(&ballot).unwrap();
                 let mut updated_accepted_map = current_accepted_map.clone();
                 updated_accepted_map.insert(sender, accepted);
@@ -700,9 +650,6 @@ verus! {
             let senders = accepted_map.keys();
             let ghost senders_spec = senders@.1;
             proof! {
-                broadcast use axiom_usize_obeys_hash_table_key_model;
-                broadcast use group_hash_axioms;
-
                 assert(senders_spec.no_duplicates());
                 assert(senders_spec.to_set() =~= accepted_map@.dom());
                 // This shows that the invariant is true before the loop
@@ -737,11 +684,7 @@ verus! {
                 result_spec == low_get_max_accepted_value(filled_accepted_map_spec),
                 (result_spec == if let Some((ballot, value)) = result { Some((ballot.into_spec(), value as SpecValue)) } else { None }),
             {
-                proof! {
-                    broadcast use axiom_usize_obeys_hash_table_key_model;
-                    broadcast use group_hash_axioms;
-                    assert(accepted_map@.contains_key(*key));
-                };
+                proof! { assert(accepted_map@.contains_key(*key)); };
                 let value = accepted_map.get(key).unwrap();
                 let value_clone = if let Some(a) = value { Some((a.0.clone(), a.1.clone())) } else { None };
 
@@ -838,10 +781,7 @@ verus! {
             let current_instance = self.get_current_instance();
             let ballot = current_instance.current_ballot.clone();
 
-            proof! {
-                axiom_ballot_obeys_hash_table_key_model();
-                broadcast use group_hash_axioms;
-            };
+            proof! { axiom_ballot_obeys_hash_table_key_model(); };
             let accepted_map = current_instance.promised.get(&ballot).unwrap();
             let value_to_propose = if let Some((ballot, value)) = Variables::get_max_accepted_value(accepted_map) { value } else { c.id };
 
@@ -927,10 +867,7 @@ verus! {
             if let Some(Message::Accepted { key, sender, ballot }) = recv {
                 let current_instance = self.get_current_instance();
 
-                proof! {
-                    axiom_ballot_obeys_hash_table_key_model();
-                    broadcast use group_hash_axioms;
-                };
+                proof! { axiom_ballot_obeys_hash_table_key_model(); };
                 let current_acceptor_set = current_instance.accepted.get(&ballot).unwrap();
                 let mut updated_acceptor_set = current_acceptor_set.clone();
                 updated_acceptor_set.insert(sender);
@@ -979,10 +916,7 @@ verus! {
             let current_instance = self.get_current_instance();
             let ballot = current_instance.current_ballot.clone();
 
-            proof! {
-                axiom_ballot_obeys_hash_table_key_model();
-                broadcast use group_hash_axioms;
-            };
+            proof! { axiom_ballot_obeys_hash_table_key_model(); };
             let value_to_decide = current_instance.proposed_value.get(&ballot).unwrap().clone();
 
             Some(Message::Decide { key: self.current_instance, ballot, value: value_to_decide })

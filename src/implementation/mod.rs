@@ -13,6 +13,7 @@ verus! {
 
     type Value = usize;
 
+    #[derive(Eq, PartialEq, std::hash::Hash)]
     pub enum Message {
         Prepare { key: u64, ballot: host::Ballot },
         Promise { key: u64, sender: usize, ballot: host::Ballot, accepted: Option<(host::Ballot, Value)> },
