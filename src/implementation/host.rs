@@ -3,24 +3,21 @@ use crate::distributed_system::{
     low_level::{
         host::{
             accept as low_accept, accepted as low_accepted, decide as low_decide,
-            get_max_accepted_value as low_get_max_accepted_value, init_request as low_init_request,
+            get_max_accepted_value as low_get_max_accepted_value,
+            get_max_accepted_value_is_commutative, init_request as low_init_request,
             max_accepted_value_by_ballot as low_max_accepted_value_by_ballot,
-            promise as low_promise, promised as low_promised, send_accept as low_send_accept,
-            send_decide as low_send_decide, send_prepare as low_send_prepare, Ballot as LowBallot,
-            Constants as LowConstants, Instance as LowInstance, Variables as LowVariables,
+            promise as low_promise, promised as low_promised,
+            same_accepted_ballots_in_accepted_map_have_same_accepted_value,
+            send_accept as low_send_accept, send_decide as low_send_decide,
+            send_prepare as low_send_prepare, Ballot as LowBallot, Constants as LowConstants,
+            Instance as LowInstance, Variables as LowVariables,
         },
         NetworkOperation,
     },
     Value as SpecValue,
 };
 use std::collections::{HashMap, HashSet};
-use vstd::{
-    prelude::*,
-    std_specs::hash::{
-        axiom_random_state_builds_valid_hashers, axiom_spec_hash_map_len,
-        axiom_u64_obeys_hash_table_key_model, group_hash_axioms, obeys_key_model,
-    },
-};
+use vstd::{prelude::*, seq_lib::group_seq_properties, std_specs::hash::*};
 
 verus! {
     pub assume_specification<K, S> [std::collections::HashSet::clone] (original: &HashSet<K, S>) -> (clone: std::collections::HashSet<K, S>)
@@ -673,6 +670,7 @@ verus! {
             );
 
             &&& accepted_map_spec.dom().finite()
+            &&& same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map_spec)
         })
         ensures ({
             let accepted_map_spec = Map::new(
@@ -683,9 +681,130 @@ verus! {
             &&& if let Some((ballot, value)) = res { Some((ballot.into_spec(), value as SpecValue)) } else { None } == low_get_max_accepted_value(accepted_map_spec)
         })
         {
-            // TODO: Don't assume. Add valid proof...
-            proof! { assume(false); };
-            None // Calculate the correct value before returning...
+            let mut result: Option<(Ballot, Value)> = None;
+
+            let ghost accepted_map_spec = Map::new(
+                |sender: nat| sender <= usize::MAX && accepted_map@.contains_key(sender as usize),
+                |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+            );
+            let ghost mut filled_accepted_map_spec: Map<nat, Option<(LowBallot, SpecValue)>> = Map::empty();
+            let ghost mut result_spec: Option<(LowBallot, SpecValue)> = None;
+
+            proof! {
+                assert(filled_accepted_map_spec.dom().finite());
+                assert(result_spec == low_get_max_accepted_value(filled_accepted_map_spec));
+                assert(result_spec == if let Some((ballot, value)) = result { Some((ballot.into_spec(), value as SpecValue)) } else { None });
+            };
+
+            let senders = accepted_map.keys();
+            let ghost senders_spec = senders@.1;
+            proof! {
+                broadcast use axiom_usize_obeys_hash_table_key_model;
+                broadcast use group_hash_axioms;
+
+                assert(senders_spec.no_duplicates());
+                assert(senders_spec.to_set() =~= accepted_map@.dom());
+                // This shows that the invariant is true before the loop
+                assert(filled_accepted_map_spec.dom() == Set::new(|sender: nat| sender <= usize::MAX && senders_spec.take(0 as int).to_set().contains(sender as usize)));
+                assert(filled_accepted_map_spec.dom() =~= Set::empty());
+                assert(filled_accepted_map_spec =~= Map::new(
+                    |sender: nat| sender <= usize::MAX && senders_spec.take(0 as int).to_set().contains(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                ));
+                assert(filled_accepted_map_spec =~= Map::empty());
+            };
+
+            for key in iter: senders
+            invariant
+                iter.keys == senders_spec,
+                iter.keys.no_duplicates(),
+                iter.keys.take(iter.pos as int).no_duplicates(),
+                senders_spec.to_set() =~= accepted_map@.dom(),
+                accepted_map_spec == Map::new(
+                    |sender: nat| sender <= usize::MAX && accepted_map@.contains_key(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                ),
+                same_accepted_ballots_in_accepted_map_have_same_accepted_value(accepted_map_spec),
+                filled_accepted_map_spec.dom().finite(),
+                filled_accepted_map_spec.dom() =~= Set::new(|sender: nat| sender <= usize::MAX && senders_spec.take(iter.pos as int).to_set().contains(sender as usize)),
+                filled_accepted_map_spec =~= Map::new(
+                    |sender: nat| sender <= usize::MAX && senders_spec.take(iter.pos as int).to_set().contains(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                ),
+                forall |sender: nat| #![auto] filled_accepted_map_spec.contains_key(sender) ==> accepted_map_spec.contains_key(sender) && filled_accepted_map_spec[sender] == accepted_map_spec[sender],
+                same_accepted_ballots_in_accepted_map_have_same_accepted_value(filled_accepted_map_spec),
+                result_spec == low_get_max_accepted_value(filled_accepted_map_spec),
+                (result_spec == if let Some((ballot, value)) = result { Some((ballot.into_spec(), value as SpecValue)) } else { None }),
+            {
+                proof! {
+                    broadcast use axiom_usize_obeys_hash_table_key_model;
+                    broadcast use group_hash_axioms;
+                    assert(accepted_map@.contains_key(*key));
+                };
+                let value = accepted_map.get(key).unwrap();
+                let value_clone = if let Some(a) = value { Some((a.0.clone(), a.1.clone())) } else { None };
+
+                proof! {
+                    assert(value == accepted_map@[*key] && value_clone == value);
+                    let value_spec = if let Some((ballot, value)) = &value_clone { Some((ballot.into_spec(), value as SpecValue)) } else { None };
+                    assert(value_spec == if let Some((ballot, value)) = accepted_map@[*key] { Some((ballot.into_spec(), value as SpecValue)) } else { None });
+
+                    let updated_filled_accepted_map_spec = filled_accepted_map_spec.insert(*key as nat, value_spec);
+                    assert(filled_accepted_map_spec =~= updated_filled_accepted_map_spec.remove(*key as nat));
+
+                    assert(iter.keys.take(iter.pos).push(*key) =~= iter.keys.take(iter.pos + 1));
+                    broadcast use group_seq_properties;
+                    assert(iter.keys.take(iter.pos + 1).to_set() =~= iter.keys.take(iter.pos).to_set().insert(*key));
+
+                    let old_map_dom = Set::new(|sender: nat| sender <= usize::MAX && senders_spec.take(iter.pos as int).to_set().contains(sender as usize));
+                    let new_map_dom = Set::new(|sender: nat| sender <= usize::MAX && senders_spec.take((iter.pos + 1) as int).to_set().contains(sender as usize));
+                    // This shows that the invariant is true at the end of the loop
+                    assert(updated_filled_accepted_map_spec.dom() =~= new_map_dom);
+                    assert(new_map_dom =~= old_map_dom.insert(*key as nat));
+
+                    let old_map = Map::new(
+                        |sender: nat| old_map_dom.contains(sender),
+                        |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                    );
+                    let new_map = Map::new(
+                        |sender: nat| new_map_dom.contains(sender),
+                        |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                    );
+                    let calculated_map = old_map.insert(*key as nat, value_spec);
+
+                    assert(filled_accepted_map_spec =~= old_map);
+                    assert(new_map =~= calculated_map);
+                    assert(updated_filled_accepted_map_spec =~= calculated_map);
+
+                    assert(forall |sender: nat| #![auto] updated_filled_accepted_map_spec.contains_key(sender) ==> accepted_map_spec.contains_key(sender) && updated_filled_accepted_map_spec[sender] == accepted_map_spec[sender]);
+                    assert(same_accepted_ballots_in_accepted_map_have_same_accepted_value(updated_filled_accepted_map_spec));
+                    get_max_accepted_value_is_commutative(updated_filled_accepted_map_spec, *key as nat);
+                    assert(low_get_max_accepted_value(updated_filled_accepted_map_spec) == low_max_accepted_value_by_ballot(value_spec, result_spec));
+
+                    filled_accepted_map_spec = updated_filled_accepted_map_spec;
+
+                    result_spec = low_get_max_accepted_value(updated_filled_accepted_map_spec);
+                    assert(result_spec == low_get_max_accepted_value(updated_filled_accepted_map_spec));
+                };
+
+                result = Variables::max_accepted_value_by_ballot(value_clone, result);
+                proof! {
+                    assert(result_spec == if let Some((ballot, value)) = result { Some((ballot.into_spec(), value as SpecValue)) } else { None });
+                };
+            }
+
+            proof! {
+                assert(senders_spec.take(senders_spec.len() as int) =~= senders_spec);
+                assert(filled_accepted_map_spec.dom() =~= Set::new(|sender: nat| sender <= usize::MAX && accepted_map@.contains_key(sender as usize)));
+                assert(filled_accepted_map_spec =~= Map::new(
+                    |sender: nat| sender <= usize::MAX && accepted_map@.contains_key(sender as usize),
+                    |sender: nat| if let Some((ballot, value)) = accepted_map@[sender as usize] { Some((ballot.into_spec(), value as SpecValue)) } else { None },
+                ));
+                assert(result_spec == low_get_max_accepted_value(filled_accepted_map_spec));
+                assert(result_spec == if let Some((ballot, value)) = result { Some((ballot.into_spec(), value as SpecValue)) } else { None });
+            };
+
+            result
         }
 
         pub exec fn send_accept(&mut self, c: &Constants, recv: Option<Message>) -> (send: Option<Message>)
@@ -697,6 +816,7 @@ verus! {
             &&& old_spec.instances.contains_key(key)
             &&& old_spec.instances[key].promised.contains_key(old_spec.instances[key].current_ballot)
             &&& old_spec.instances[key].promised[old_spec.instances[key].current_ballot].dom().finite()
+            &&& same_accepted_ballots_in_accepted_map_have_same_accepted_value(old_spec.instances[key].promised[old_spec.instances[key].current_ballot])
             &&& old_spec.instances[key].promised[old_spec.instances[key].current_ballot].len() > c.num_failures
             &&& !old_spec.instances[key].proposed_value.contains_key(old_spec.instances[key].current_ballot)
             &&& recv.is_none()
