@@ -148,6 +148,18 @@ verus! {
         }
     }
 
+    impl Clone for Variables {
+        exec fn clone(&self) -> (clone: Self)
+        ensures
+            clone == self,
+        {
+            Self {
+                current_instance: self.current_instance.clone(),
+                instances: self.instances.clone(),
+            }
+        }
+    }
+
     impl Constants {
         pub open spec fn well_formed(&self) -> bool {
             &&& 0 <= self.id < self.num_hosts

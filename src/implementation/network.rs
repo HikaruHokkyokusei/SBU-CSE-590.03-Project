@@ -42,6 +42,17 @@ verus! {
         }
     }
 
+    impl Clone for Variables {
+        exec fn clone(&self) -> (clone: Self)
+        ensures
+            clone == self,
+        {
+            Self {
+                in_flight_messages: self.in_flight_messages.clone(),
+            }
+        }
+    }
+
     impl Variables {
         pub exec fn new() -> (res: Self)
         ensures

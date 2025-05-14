@@ -21,6 +21,41 @@ verus! {
         Decide { key: u64, ballot: host::Ballot, value: Value },
     }
 
+    impl Clone for Message {
+        exec fn clone(&self) -> (clone: Self)
+        ensures
+            clone == self,
+        {
+            match (self) {
+                Message::Prepare { key, ballot } => Self::Prepare {
+                    key: key.clone(),
+                    ballot: ballot.clone(),
+                },
+                Message::Promise { key, sender, ballot, accepted } => Self::Promise {
+                    key: key.clone(),
+                    sender: sender.clone(),
+                    ballot: ballot.clone(),
+                    accepted: if let Some((ballot, value)) = accepted { Some((ballot.clone(), value.clone())) } else { None },
+                },
+                Message::Accept { key, ballot, value } => Self::Accept {
+                    key: key.clone(),
+                    ballot: ballot.clone(),
+                    value: value.clone(),
+                },
+                Message::Accepted { key, sender, ballot } => Self::Accepted {
+                    key: key.clone(),
+                    sender: sender.clone(),
+                    ballot: ballot.clone(),
+                },
+                Message::Decide { key, ballot, value } => Self::Decide {
+                    key: key.clone(),
+                    ballot: ballot.clone(),
+                    value: value.clone(),
+                },
+            }
+        }
+    }
+
     impl Message {
         pub open spec fn valid_spec(message: LowMessage) -> bool {
             match (message) {
@@ -173,6 +208,20 @@ verus! {
             LowVariables {
                 hosts: Seq::new(self.hosts@.len(), |i: int| self.hosts@[i].into_spec()),
                 network: self.network.into_spec(),
+            }
+        }
+    }
+
+    impl Clone for Variables {
+        exec fn clone(&self) -> (clone: Self)
+        ensures
+            clone.hosts.len() == self.hosts.len(),
+            forall |i: int| #![auto] 0 <= i < clone.hosts.len() ==> clone.hosts[i] == self.hosts[i],
+            clone.network == self.network,
+        {
+            Self {
+                hosts: self.hosts.clone(),
+                network: self.network.clone(),
             }
         }
     }
