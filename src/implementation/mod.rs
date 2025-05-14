@@ -305,6 +305,7 @@ verus! {
             c.network.well_formed(),
         ensures
             res.well_formed(c),
+            forall |i: usize| #![auto] 0 <= i < res.hosts.len() ==> res.hosts[i as int].current_instance == 0,
             low_init(&constants_abstraction(c), &variables_abstraction(c, &res)),
         {
             let mut hosts: Vec<host::Variables> = Vec::with_capacity(c.num_hosts);
@@ -314,6 +315,7 @@ verus! {
                 c.well_formed(),
                 hosts.len() == id,
                 forall |i: usize| #![auto] 0 <= i < c.hosts.len() ==> c.hosts[i as int].well_formed(),
+                forall |i: usize| #![auto] 0 <= i < hosts.len() ==> hosts[i as int].current_instance == 0,
                 forall |i: usize| #![auto] 0 <= i < hosts.len() ==> hosts[i as int].into_spec().instances =~= Map::empty(),
             {
                 hosts.push(host::Variables::new(&c.hosts[id]));
