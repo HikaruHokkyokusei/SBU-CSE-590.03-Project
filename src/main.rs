@@ -32,21 +32,6 @@ verus! {
     ensures
         #[trigger] obeys_key_model::<implementation::host::Ballot>(),
     { admit(); }
-
-    impl implementation::Variables {
-        pub proof fn spec_equivalance(&self, other: &Self)
-        ensures
-            (
-                other.network.into_spec() == self.network.into_spec() &&
-                other.hosts.len() == self.hosts.len() &&
-                (forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> other.hosts@[i].into_spec() == self.hosts@[i].into_spec())
-            )
-            <==>
-            other.into_spec() == self.into_spec(),
-        {
-            assume(false);
-        }
-    }
 }
 
 verus! {

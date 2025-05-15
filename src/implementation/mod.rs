@@ -241,6 +241,90 @@ verus! {
                 network: self.network.into_spec(),
             }
         }
+
+        pub proof fn spec_network_equivalance(&self, other: &Self)
+        ensures
+            other.network.into_spec() == self.network.into_spec() <==> other.into_spec().network == self.into_spec().network,
+        { }
+
+        pub proof fn spec_hosts_equivalance(&self, other: &Self, base: int)
+        requires
+            0 <= base <= self.hosts.len(),
+        ensures
+            (
+                (other.hosts.len() == self.hosts.len()) &&
+                (forall |i: int| #![auto] base <= i < self.hosts.len() ==> other.hosts@[i].into_spec() == self.hosts@[i].into_spec())
+            )
+            <==>
+            (
+                (other.into_spec().hosts.len() == self.into_spec().hosts.len()) &&
+                (forall |i: int| #![auto] base <= i < self.hosts.len() ==> other.into_spec().hosts[i] == self.into_spec().hosts[i])
+            )
+        {
+            let (other_sepc, self_spec) = (other.into_spec(), self.into_spec());
+            assert(other_sepc.hosts.len() == other.hosts.len() && self_spec.hosts.len() == self.hosts.len());
+            assert(forall |i: int| #![auto] 0 <= i < other.hosts.len() ==> other_sepc.hosts[i] == other.hosts@[i].into_spec());
+            assert(forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> self_spec.hosts[i] == self.hosts@[i].into_spec());
+
+            if (
+                (other.into_spec().hosts.len() == self.into_spec().hosts.len()) &&
+                (forall |i: int| #![auto] base <= i < self.hosts.len() ==> other.into_spec().hosts[i] == self.into_spec().hosts[i])
+            ) {
+                assert(other.hosts.len() == self.hosts.len());
+
+                assert forall |i: int| #![auto]
+                    base <= i < other.hosts.len() implies
+                    other.hosts@[i].into_spec() == self.hosts@[i].into_spec()
+                by {
+                    assert(base <= i < self.hosts.len());
+                    assert(self_spec.hosts[i]  == self.hosts@[i].into_spec());
+                    assert(other.hosts@[i].into_spec() == self.hosts@[i].into_spec());
+                };
+            }
+        }
+
+        pub proof fn spec_equivalance(&self, other: &Self)
+        ensures
+            (
+                other.network.into_spec() == self.network.into_spec() &&
+                other.hosts.len() == self.hosts.len() &&
+                (forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> other.hosts@[i].into_spec() == self.hosts@[i].into_spec())
+            )
+            <==>
+            other.into_spec() == self.into_spec(),
+        {
+            self.spec_network_equivalance(other);
+            self.spec_hosts_equivalance(other, 0);
+
+            let (other_sepc, self_spec) = (other.into_spec(), self.into_spec());
+            assert(other_sepc.hosts.len() == other.hosts.len() && self_spec.hosts.len() == self.hosts.len());
+            assert(forall |i: int| #![auto] 0 <= i < other.hosts.len() ==> other_sepc.hosts[i] == other.hosts@[i].into_spec());
+            assert(forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> self_spec.hosts[i] == self.hosts@[i].into_spec());
+
+            if (other_sepc == self_spec) {
+                assert(other.hosts.len() == self.hosts.len());
+
+                assert forall |i: int| #![auto]
+                    0 <= i < other.hosts.len() implies
+                    other.hosts@[i].into_spec() == self.hosts@[i].into_spec()
+                by {
+                    assert(0 <= i < self.hosts.len());
+                    assert(self_spec.hosts[i]  == self.hosts@[i].into_spec());
+                    assert(other.hosts@[i].into_spec() == self.hosts@[i].into_spec());
+                };
+            }
+
+            if (
+                (other.network.into_spec() == self.network.into_spec()) &&
+                (other.hosts.len() == self.hosts.len()) &&
+                (forall |i: int| #![auto] 0 <= i < other.hosts.len() ==> other.hosts@[i].into_spec() == self.hosts@[i].into_spec())
+            ) {
+                assert(other_sepc.hosts.len() == self_spec.hosts.len());
+                assert(other_sepc.hosts == self_spec.hosts);
+                assert(other_sepc.network == self_spec.network);
+                assert(other_sepc == self_spec);
+            }
+        }
     }
 
     impl Clone for Variables {
