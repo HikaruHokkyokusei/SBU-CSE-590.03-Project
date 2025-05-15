@@ -85,9 +85,13 @@ verus! {
 
             v.all_host_init_request(&c);
             proof! { low_variables = variables_abstraction(c, v); };
+
+            v.host_send_prepare(&c, 0);
+            proof! { low_variables = variables_abstraction(c, v); };
         };
 
         proof! {
+            assert(low_variables == variables_abstraction(c, v));
             inductive_is_safe(&low_constants, &low_variables);
             assert(low_safety(&low_constants, &low_variables));
         };
@@ -98,5 +102,7 @@ verus! {
         let mut v = Variables::new(&c);
 
         driver(&c, &mut v);
+
+        assert(low_safety(&constants_abstraction(&c), &variables_abstraction(&c, &v)));
     }
 }
