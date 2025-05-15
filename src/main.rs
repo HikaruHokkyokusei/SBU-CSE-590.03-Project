@@ -56,20 +56,35 @@ verus! {
         };
 
         let mut current_instance: u64 = 0;
-        proof! { assert(forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance); };
+        proof! {
+            assert(forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance);
+            assert(forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && 0 <= instance <= u64::MAX ==> !v.into_spec().hosts[i].instances.contains_key(instance));
+            assert(forall |i: int, instance: nat| #![auto] 0 <= i < low_variables.hosts.len() && 0 <= instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance));
+        };
 
         while current_instance < u64::MAX
         invariant
             v.well_formed(c),
             v.into_spec().well_formed(&c.into_spec()),
-            forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance,
             low_variables == variables_abstraction(c, v),
+            forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance,
+            forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && current_instance < instance <= u64::MAX ==> !v.into_spec().hosts[i].instances.contains_key(instance),
+            forall |i: int, instance: nat| #![auto] 0 <= i < low_variables.hosts.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance),
             low_inductive(&low_constants, &low_variables),
         decreases
             u64::MAX - current_instance,
         {
             v.all_host_next_intance(&c);
             current_instance += 1;
+
+            proof! {
+                low_variables = variables_abstraction(c, v);
+                assert(forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance);
+                assert(forall |i: int| #![auto] 0 <= i < low_variables.hosts.len() ==> !low_variables.hosts[i].instances.contains_key(v.hosts@[i].current_instance as nat));
+            };
+
+            v.all_host_init_request(&c);
+            proof! { low_variables = variables_abstraction(c, v); };
         };
 
         proof! {
