@@ -70,13 +70,13 @@ verus! {
                     &&& host::Ballot::valid_spec(ballot)
                     &&& if let Some((ballot, value)) = accepted {
                         &&& host::Ballot::valid_spec(ballot)
-                        &&& value <= Value::MAX
+                        &&& Value::MIN <= value <= Value::MAX
                     } else { true }
                 }
                 LowMessage::Accept { key, ballot, value } => {
                     &&& key <= u64::MAX
                     &&& host::Ballot::valid_spec(ballot)
-                    &&& value <= Value::MAX
+                    &&& Value::MIN <= value <= Value::MAX
                 },
                 LowMessage::Accepted { key, sender, ballot } => {
                     &&& key <= u64::MAX
@@ -86,7 +86,7 @@ verus! {
                 LowMessage::Decide { key, ballot, value } => {
                     &&& key <= u64::MAX
                     &&& host::Ballot::valid_spec(ballot)
-                    &&& value <= Value::MAX
+                    &&& Value::MIN <= value <= Value::MAX
                 },
             }
         }
