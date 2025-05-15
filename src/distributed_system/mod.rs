@@ -40,7 +40,7 @@ verus! {
     }
 
     // Corresponds to `init(c, u) ==> inductive(c, u)`
-    proof fn refinement_init(c: &LowConstants, u: &LowVariables)
+    pub proof fn refinement_init(c: &LowConstants, u: &LowVariables)
     requires
         low_init(c, u),
     ensures
@@ -49,7 +49,7 @@ verus! {
     { }
 
     // Corresponds to `inductive(c, u) && next(c, u, v) ==> inductive(c, v)`
-    proof fn refinement_next(c: &LowConstants, u: &LowVariables, v: &LowVariables, event: Event)
+    pub proof fn refinement_next(c: &LowConstants, u: &LowVariables, v: &LowVariables, event: Event)
     requires
         inductive(c, u),
         low_next(c, u, v, event),
@@ -160,7 +160,7 @@ verus! {
     }
 
     // Corresponds to `inductive(c, u) ==> safety(c, u)`
-    proof fn inductive_is_safe(c: &LowConstants, u: &LowVariables)
+    pub proof fn inductive_is_safe(c: &LowConstants, u: &LowVariables)
     requires
         inductive(c, u)
     ensures

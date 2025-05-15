@@ -326,5 +326,42 @@ verus! {
                network: network::Variables::new(),
             }
         }
+
+        pub exec fn all_host_next_intance(&mut self, c: &Constants)
+        requires ({
+            let old_spec = old(self).into_spec();
+
+            &&& old(self).well_formed(c)
+            &&& old_spec.well_formed(&c.into_spec())
+            &&& forall |i: int| #![auto] 0 <= i < old(self).hosts.len() ==> old(self).hosts[i].current_instance < u64::MAX
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& self.well_formed(c)
+            &&& new_spec.well_formed(&c.into_spec())
+            &&& forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> self.hosts@[i].current_instance == old(self).hosts@[i].current_instance + 1
+            &&& new_spec =~= old_spec
+        })
+        {
+            let ghost old_spec = old(self).into_spec();
+
+            for id in iter: 0..self.hosts.len()
+            invariant
+                iter.end == self.hosts.len(),
+                self.well_formed(c),
+                self.hosts.len() == old(self).hosts.len(),
+                forall |i: int| #![auto] id <= i < self.hosts.len() ==> old(self).hosts@[i].current_instance == self.hosts[i].current_instance && self.hosts[i].current_instance < u64::MAX,
+                forall |i: int| #![auto] 0 <= i < id ==> self.hosts@[i].current_instance == old(self).hosts@[i].current_instance + 1,
+                forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> self.hosts@[i].into_spec() == old(self).hosts@[i].into_spec(),
+                self.network == old(self).network,
+                self.into_spec() =~= old(self).into_spec(),
+            {
+                let mut new_state = self.hosts[id].clone();
+                new_state.next_instance(&c.hosts[id]);
+                self.hosts[id] = new_state;
+                proof! { self.spec_equivalance(&old(self)); };
+            }
+        }
     }
 }

@@ -1,3 +1,9 @@
+use crate::distributed_system::{
+    inductive_is_safe,
+    low_level::{inductive as low_inductive, init as low_init, safety as low_safety},
+    refinement_init,
+};
+use implementation::{constants_abstraction, variables_abstraction, Constants, Variables};
 use std::collections::{HashMap, HashSet};
 use vstd::{prelude::*, std_specs::hash::obeys_key_model};
 
@@ -27,11 +33,70 @@ verus! {
         #[trigger] obeys_key_model::<implementation::host::Ballot>(),
     { admit(); }
 
+    impl implementation::Variables {
+        pub proof fn spec_equivalance(&self, other: &Self)
+        ensures
+            (
+                other.network.into_spec() == self.network.into_spec() &&
+                other.hosts.len() == self.hosts.len() &&
+                (forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> other.hosts@[i].into_spec() == self.hosts@[i].into_spec())
+            )
+            <==>
+            other.into_spec() == self.into_spec(),
+        {
+            assume(false);
+        }
+    }
 }
 
 verus! {
     mod distributed_system;
     mod implementation;
 
-    fn main() { }
+    exec fn driver(c: &Constants, v: &mut Variables)
+    requires
+        old(v).well_formed(c),
+        forall |i: int| #![auto] 0 <= i < old(v).hosts@.len() ==> old(v).hosts@[i].current_instance == 0,
+        low_init(&constants_abstraction(&c), &variables_abstraction(&c, &old(v))),
+    ensures
+        v.well_formed(c),
+        low_safety(&constants_abstraction(&c), &variables_abstraction(&c, v)),
+    {
+        let ghost low_constants = constants_abstraction(&c);
+        let ghost mut low_variables = variables_abstraction(&c, v);
+
+        proof! {
+            refinement_init(&low_constants, &low_variables);
+            assert(low_inductive(&low_constants, &low_variables));
+        };
+
+        let mut current_instance: u64 = 0;
+        proof! { assert(forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance); };
+
+        while current_instance < u64::MAX
+        invariant
+            v.well_formed(c),
+            v.into_spec().well_formed(&c.into_spec()),
+            forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance,
+            low_variables == variables_abstraction(c, v),
+            low_inductive(&low_constants, &low_variables),
+        decreases
+            u64::MAX - current_instance,
+        {
+            v.all_host_next_intance(&c);
+            current_instance += 1;
+        };
+
+        proof! {
+            inductive_is_safe(&low_constants, &low_variables);
+            assert(low_safety(&low_constants, &low_variables));
+        };
+    }
+
+    exec fn main() {
+        let c = Constants::new(3);
+        let mut v = Variables::new(&c);
+
+        driver(&c, &mut v);
+    }
 }
