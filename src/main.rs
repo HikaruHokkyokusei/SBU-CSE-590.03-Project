@@ -3,7 +3,9 @@ use crate::distributed_system::{
     low_level::{inductive as low_inductive, init as low_init, safety as low_safety},
     refinement_init,
 };
-use implementation::{constants_abstraction, variables_abstraction, Constants, Variables};
+use implementation::{
+    constants_abstraction, host::Ballot, variables_abstraction, Constants, Message, Variables,
+};
 use std::collections::{HashMap, HashSet};
 use vstd::{prelude::*, std_specs::hash::obeys_key_model};
 
@@ -88,6 +90,23 @@ verus! {
 
             v.host_send_prepare(&c, 0);
             proof! { low_variables = variables_abstraction(c, v); };
+
+            let prepare_message = Message::Prepare { key: current_instance, ballot: Ballot { num: 1, pid: c.hosts[0].id } };
+            proof! {
+                assert(
+                    forall |i: int| #![auto]
+                        0 <= i < v.hosts@.len() ==>
+                        v.hosts@[i].current_instance == prepare_message->Prepare_key &&
+                        low_variables.hosts[i].instances.contains_key(prepare_message->Prepare_key as nat) &&
+                        prepare_message->Prepare_ballot.into_spec().cmp(&low_variables.hosts[i].instances[prepare_message->Prepare_key as nat].current_ballot) == 1
+                );
+            };
+            v.all_host_promise(&c, prepare_message);
+            proof! {
+                low_variables = variables_abstraction(c, v);
+                assert(forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && current_instance < instance <= u64::MAX ==> !v.into_spec().hosts[i].instances.contains_key(instance));
+                assert(forall |i: int, instance: nat| #![auto] 0 <= i < low_variables.hosts.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance));
+            };
         };
 
         proof! {
