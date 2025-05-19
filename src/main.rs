@@ -1,10 +1,14 @@
 use crate::distributed_system::{
     inductive_is_safe,
-    low_level::{inductive as low_inductive, init as low_init, safety as low_safety},
+    low_level::{
+        host::promise as low_promise, inductive as low_inductive, init as low_init,
+        safety as low_safety,
+    },
     refinement_init,
 };
 use implementation::{
-    constants_abstraction, host::Ballot, variables_abstraction, Constants, Message, Variables,
+    constants_abstraction, host::Ballot, variables_abstraction, Constants, Message,
+    NetworkOperation, Variables,
 };
 use std::collections::{HashMap, HashSet};
 use vstd::{prelude::*, std_specs::hash::obeys_key_model};
@@ -67,10 +71,10 @@ verus! {
         while current_instance < u64::MAX
         invariant
             v.well_formed(c),
-            v.into_spec().well_formed(&c.into_spec()),
+            low_variables.well_formed(&c.into_spec()),
             low_variables == variables_abstraction(c, v),
             forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance,
-            forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && current_instance < instance <= u64::MAX ==> !v.into_spec().hosts[i].instances.contains_key(instance),
+            forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance),
             forall |i: int, instance: nat| #![auto] 0 <= i < low_variables.hosts.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance),
             low_inductive(&low_constants, &low_variables),
         decreases
@@ -101,12 +105,63 @@ verus! {
                         prepare_message->Prepare_ballot.into_spec().cmp(&low_variables.hosts[i].instances[prepare_message->Prepare_key as nat].current_ballot) == 1
                 );
             };
-            v.all_host_promise(&c, prepare_message);
+
+            let ghost prev_spec = low_variables;
+            let promise_messages = v.all_host_promise(&c, prepare_message).unwrap();
             proof! {
                 low_variables = variables_abstraction(c, v);
-                assert(forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && current_instance < instance <= u64::MAX ==> !v.into_spec().hosts[i].instances.contains_key(instance));
+                assert(forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance));
                 assert(forall |i: int, instance: nat| #![auto] 0 <= i < low_variables.hosts.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance));
+                assert(promise_messages.len() == v.hosts.len() && v.hosts.len() == prev_spec.hosts.len());
+                assert(
+                    forall |i: int| #![auto]
+                        0 <= i < v.hosts@.len() ==>
+                        v.hosts@[i].current_instance == prepare_message->Prepare_key &&
+                        prev_spec.hosts[i].instances.contains_key(prepare_message->Prepare_key as nat) &&
+                        prepare_message->Prepare_ballot.into_spec().cmp(&prev_spec.hosts[i].instances[prepare_message->Prepare_key as nat].current_ballot) == 1
+                );
+                assert(
+                    forall |i: int| #![auto]
+                        0 <= i < promise_messages.len() &&
+                        v.hosts@[i].current_instance == prepare_message->Prepare_key &&
+                        prev_spec.hosts[i].instances.contains_key(prepare_message->Prepare_key as nat) &&
+                        prepare_message->Prepare_ballot.into_spec().cmp(&prev_spec.hosts[i].instances[prepare_message->Prepare_key as nat].current_ballot) == 1 ==>
+                        promise_messages@[i].is_some() &&
+                        low_promise(&c.into_spec().hosts[i], &prev_spec.hosts[i], &low_variables.hosts[i], prepare_message->Prepare_key as nat, NetworkOperation::from_messages_as_spec(Some(prepare_message), promise_messages@[i]))
+                );
+                assert(
+                    forall |i: int| #![auto]
+                        0 <= i < promise_messages.len() ==>
+                        promise_messages@[i].is_some() &&
+                        low_promise(&c.into_spec().hosts[i], &prev_spec.hosts[i], &low_variables.hosts[i], prepare_message->Prepare_key as nat, NetworkOperation::from_messages_as_spec(Some(prepare_message), promise_messages@[i]))
+                );
             };
+
+            for id in iter: 0..v.hosts.len()
+            invariant
+                iter.end == v.hosts.len(),
+                v.well_formed(c),
+                low_variables.well_formed(&c.into_spec()),
+                low_variables == variables_abstraction(c, v),
+                forall |i: int| #![auto] 0 <= i < v.hosts@.len() ==> v.hosts@[i].current_instance == current_instance,
+                forall |i: int, instance: nat| #![auto] 0 <= i < v.hosts@.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance),
+                forall |i: int, instance: nat| #![auto] 0 <= i < low_variables.hosts.len() && current_instance < instance <= u64::MAX ==> !low_variables.hosts[i].instances.contains_key(instance),
+                low_inductive(&low_constants, &low_variables),
+                promise_messages.len() == low_variables.hosts.len(),
+                forall |i: int| #![auto]
+                    0 <= i < low_variables.hosts.len() ==>
+                    promise_messages@[i].is_some() &&
+                    promise_messages@[i].unwrap() is Promise &&
+                    low_variables.network.in_flight_messages.contains(promise_messages@[i].unwrap().into_spec()) &&
+                    v.hosts@[0].current_instance == promise_messages@[i].unwrap()->Promise_key &&
+                    low_variables.hosts[0].instances.contains_key(v.hosts@[i].current_instance as nat) &&
+                    low_variables.hosts[0].instances[promise_messages@[i].unwrap()->Promise_key as nat].promised.contains_key(promise_messages@[i].unwrap()->Promise_ballot.into_spec()) &&
+                    !low_variables.hosts[0].instances[promise_messages@[i].unwrap()->Promise_key as nat].proposed_value.contains_key(promise_messages@[i].unwrap()->Promise_ballot.into_spec()),
+            {
+                let promise_message = promise_messages[id].as_ref().unwrap();
+                v.host_promised(&c, 0, promise_message.clone());
+                proof! { low_variables = variables_abstraction(c, v); };
+            }
         };
 
         proof! {
