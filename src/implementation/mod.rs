@@ -2,7 +2,7 @@ use crate::distributed_system::{
     low_level::{
         host::{
             init_request as low_init_request, promise as low_promise, promised as low_promised,
-            send_prepare as low_send_prepare, Ballot as LowBallot,
+            send_accept as low_send_accept, send_prepare as low_send_prepare, Ballot as LowBallot,
         },
         host_step as low_host_step, inductive as low_inductive, init as low_init,
         is_valid_transition, next, Constants as LowConstants, Message as LowMessage,
@@ -775,6 +775,70 @@ verus! {
             self.hosts[host_id] = new_state;
             proof! {
                 assert(low_promised(&c.into_spec().hosts[host_id as int], &old(self).into_spec().hosts[host_id as int], &self.into_spec().hosts[host_id as int], self.hosts@[host_id as int].current_instance as nat, net_op.into_spec()));
+            };
+
+            proof! {
+                assert(low_host_step(&c.into_spec(), &prev_spec, &self.into_spec(), host_id as int, self.hosts@[host_id as int].current_instance as nat, net_op.into_spec(), Event::NoOp));
+                assert(is_valid_transition(&c.into_spec(), &prev_spec, &self.into_spec(), Transition::HostStep { host_id: host_id as int, instance: self.hosts@[host_id as int].current_instance as nat, net_op: net_op.into_spec() }, Event::NoOp));
+                assert(next(&c.into_spec(), &prev_spec, &self.into_spec(), Event::NoOp));
+                refinement_next(&c.into_spec(), &prev_spec, &self.into_spec(), Event::NoOp);
+                assert(low_inductive(&c.into_spec(), &self.into_spec()));
+                prev_spec = self.into_spec();
+            };
+
+            net_op.send
+        }
+
+        pub exec fn host_send_accept(&mut self, c: &Constants, host_id: usize) -> (send: Option<Message>)
+        requires ({
+            let old_spec = old(self).into_spec();
+            let i = host_id as int;
+
+            &&& old(self).well_formed(c)
+            &&& low_inductive(&c.into_spec(), &old_spec)
+            &&& 0 <= host_id < old_spec.hosts.len()
+            &&& old_spec.hosts[i].instances.contains_key(old(self).hosts[i].current_instance as nat)
+            &&& old_spec.hosts[i].instances[old(self).hosts[i].current_instance as nat].promised.contains_key(old_spec.hosts[i].instances[old(self).hosts[i].current_instance as nat].current_ballot)
+            &&& old_spec.hosts[i].instances[old(self).hosts[i].current_instance as nat].promised[old_spec.hosts[i].instances[old(self).hosts[i].current_instance as nat].current_ballot].len() > c.num_failures
+            &&& !old_spec.hosts[i].instances[old(self).hosts[i].current_instance as nat].proposed_value.contains_key(old_spec.hosts[i].instances[old(self).hosts[i].current_instance as nat].current_ballot)
+        })
+        ensures ({
+            let (old_spec, new_spec) = (old(self).into_spec(), self.into_spec());
+
+            &&& self.well_formed(c)
+            &&& low_inductive(&c.into_spec(), &new_spec)
+            &&& forall |i: int| #![auto] 0 <= i < self.hosts.len() ==> self.hosts@[i].current_instance == old(self).hosts@[i].current_instance
+            &&& forall |i: int| #![auto] 0 <= i < self.hosts.len() && i != host_id ==> new_spec.hosts[i] == old_spec.hosts[i]
+            &&& low_send_accept(&c.into_spec().hosts[host_id as int], &old_spec.hosts[host_id as int], &new_spec.hosts[host_id as int], self.hosts@[host_id as int].current_instance as nat, NetworkOperation::from_messages_as_spec(None, send))
+            &&& send == Some(Message::Accept {
+                    key: self.hosts@[host_id as int].current_instance,
+                    ballot: self.hosts@[host_id as int].instances@[self.hosts@[host_id as int].current_instance].current_ballot,
+                    value: self.hosts@[host_id as int].instances@[self.hosts@[host_id as int].current_instance].proposed_value@[self.hosts@[host_id as int].instances@[self.hosts@[host_id as int].current_instance].current_ballot]
+                })
+            &&& new_spec.network.in_flight_messages =~= old_spec.network.in_flight_messages.insert(send.unwrap().into_spec())
+        })
+        {
+            let ghost prev_spec = self.into_spec();
+
+            let mut new_state = self.hosts[host_id].clone();
+            let ghost prev_host_state_spec = new_state.into_spec();
+            proof! {
+                assert(new_state.into_spec().well_formed(&c.into_spec().hosts[host_id as int]));
+                assert(new_state.into_spec().instances.contains_key(self.hosts@[host_id as int].current_instance as nat));
+            };
+
+            let send = new_state.send_accept(&c.hosts[host_id], None);
+            let net_op = NetworkOperation::from_messages(None, send);
+            self.network.step(&c.network, &net_op);
+            proof! {
+                assert(send.is_some());
+                assert(low_send_accept(&c.into_spec().hosts[host_id as int], &prev_host_state_spec, &new_state.into_spec(), self.hosts@[host_id as int].current_instance as nat, net_op.into_spec()));
+                assert(old(self).into_spec().hosts[host_id as int] == prev_host_state_spec);
+            };
+
+            self.hosts[host_id] = new_state;
+            proof! {
+                assert(low_send_accept(&c.into_spec().hosts[host_id as int], &old(self).into_spec().hosts[host_id as int], &self.into_spec().hosts[host_id as int], self.hosts@[host_id as int].current_instance as nat, net_op.into_spec()));
             };
 
             proof! {
