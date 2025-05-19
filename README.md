@@ -1,40 +1,29 @@
 # SBU-CSE-590.03 Project
 
-This repository contains the fully verified **Specification** for the SBU CSE 590.03 project, comprising:
+This repository contains both, the fully verified **Specification**, and the in‑progress **Implementation** for the SBU
+CSE 590.03 project, comprising:
 
 1. **High-Level State Machine**
 2. **Low-Level State Machine** (First refinement: Refines the High-Level State Machine)
 3. **Implementation** (Second refinement: Refines the Low Level State Machine specification)
 
-> **Note:** This README covers *only* items 1 and 2 (“Specification”). The `master` branch,
-> which this submission is about, only contains "Specification."
-> The implementation layer is under separate development (on a different branch `Multi-Paxos`)
-> and is **NOT** part of this submission.
-
----
-
 ## Table of Contents
 
 - [Repository](#repository)
 - [Specification Layers](#specification-layers)
+- [Implementation Layer](#implementation-layer)
 - [Verification & Toolchain Requirements](#verification--toolchain-requirements)
 - [Building & Checking the Specification](#building--checking-the-specification)
 - [AI Tools & External Guidance](#ai-tools--external-guidance)
 - [Acknowledgements & References](#acknowledgements--references)
 
----
-
 ## Repository
 
-**Primary:** `master` branch (The latest commit contains complete specification)
-
 ```bash
-git clone https://github.com/HikaruHokkyokusei/SBU-CSE-590.03-Project.git
+git clone --branch Multi-Paxos https://github.com/HikaruHokkyokusei/SBU-CSE-590.03-Project.git
 
 cd SBU-CSE-590.03-Project
 ```
-
----
 
 ## Specification Layers
 
@@ -50,21 +39,40 @@ The specification is developed via a two‑level refinement:
 
 > ⚙️ This is a **complete, ground‑up** specification: **all proofs fully verified**, with **zero** `assume`/`admit`.
 
----
+## Implementation Layer
+
+The implementation layer is a 1:1 translation of the Low‑Level spec into executable Rust, with proofs that the execution
+refines the specification.
+
+* **Module Breakdown:**
+    * `implementation/host` & `implementation/network` modules: Complete translation and verification
+    * `implementation/mod`: Helper executors for the driver along with modular proofs
+    * **Abstraction functions**: Maps implementation states → spec states (fully done)
+    * **Driver**: Basic `prepare`, `promise`, `promised` and `send_accept` phase implemented (host 0 leader, no failures)
+* **Assumptions** (in `src/main.rs` within top-most `verus! { … }`):
+    * Cloning a `HashMap<K, V, S>` or `HashSet<K, S>` yields an equal structure (Where `K`, `V`, and `S` should all be clonable).
+    * Custom key types (`Ballot { num: u64, pid: usize }`) and message enums satisfy the Hash‑Table Key Model via `assume`.
+* **Upstream Changes to Verus:**
+    * `HashMap::is_empty` ↔ `Map::is_empty` no longer needs `assume` (**My** PR [#1637](https://github.com/verus-lang/verus/pull/1637), accepted May 12, 2025).
+* **Current Progress:**
+    * Host & network modules fully verified.
+    * Abstraction proofs complete.
+    * Upto driver's `send_accept` in place.
+* **Next Steps:**
+    * Optimize proof triggers (rlimit issues).
+    * Extend the driver to full Paxos rounds, simulate multiple leaders and failures.
 
 ## Verification & Toolchain Requirements
 
-* **Verus** (Release): `any build ≥ March 25, 2025` (Latest is **HIGHLY** recommended over other past versions)
+* **Verus** (Release): `any build ≥ May 12, 2025` (Latest is **HIGHLY** recommended over other past versions)
 * **Rust Toolchain**: `1.82.0-x86_64-pc-windows-msvc`
 * Platform Tested: **Windows**
 
-> The Verus proofs rely on the latest release; ensure you have a Verus build ≥ March 25, 2025.
+> The Verus proofs rely on the latest release; ensure you have a Verus build ≥ May 12, 2025.
 > At this stage, it is **NOT** possible for me to downgrade verus.
 
 > Setting a custom Verus binary in `VS Code`'s Verus Extension is straight forward.
 > Go to `File > Preferences > Setting > Search - Verus Binary > Add path to verus binary in setting.json`
-
----
 
 ## Building & Checking the Specification
 
@@ -72,8 +80,6 @@ The specification is developed via a two‑level refinement:
 2. Install Verus (see [Verus docs](https://github.com/verus-lang/verus)).
 3. To verify the proof, run `verus src/main.rs` in the repo root. Assuming `verus` command points to minimum required verus binary.
 4. All proofs should be verified successfully.
-
----
 
 ## AI Tools & External Guidance
 
@@ -83,18 +89,16 @@ The specification is developed via a two‑level refinement:
 
 > While AI and community guidance were helpful, **all** core proofs were manually written and verified.
 
----
-
 ## Acknowledgements & References
 
 * **Verus Language & Library:** Code, axioms, examples
 * **Verus Maintainers:** [Bryan Parno](https://github.com/parno), [Travis Hance](https://github.com/tjhance), [Jay Lorch](https://github.com/jaylorch), [Matthias Brun](https://github.com/matthias-brun)
 * **GitHub Issues / Discussions**:
-  * **[#1525](https://github.com/verus-lang/verus/issues/1525)**: Finiteness of the empty set → now treated finite by default in newer Verus versions.
-  * **[#1543](https://github.com/verus-lang/verus/issues/1543) / [#1544](https://github.com/verus-lang/verus/discussions/1544)**: Oversight in set-property proofs.
-  * **[#1574](https://github.com/verus-lang/verus/discussions/1574)**: Assertions (`==>`), `implies`, quantifiers, and triggers.
-  * **[#1592](https://github.com/verus-lang/verus/discussions/1592)**: Further help with quantifiers and triggers.
+  * **Issue [#1525](https://github.com/verus-lang/verus/issues/1525)**: Finiteness of the empty set → now treated finite by default in newer Verus versions.
+  * **Issue [#1543](https://github.com/verus-lang/verus/issues/1543) / [#1544](https://github.com/verus-lang/verus/discussions/1544)**: Oversight in set-property proofs.
+  * **Discussion [#1574](https://github.com/verus-lang/verus/discussions/1574)**: Assertions (`==>`), `implies`, quantifiers, and triggers.
+  * **Discussion [#1592](https://github.com/verus-lang/verus/discussions/1592)**: Further help with quantifiers and triggers.
+  * **Discussion [#1630](https://github.com/verus-lang/verus/discussions/1630)**: Translating `HashMap` → `Map` (Let to PR: [#1637](https://github.com/verus-lang/verus/pull/1637))
+  * **Issue: [#1641](https://github.com/verus-lang/verus/issues/1641)**: Closed by author (user oversight)
 * **Professor Shuai Mu:** High‑Level design & debugging
 * **Verus Documentation:** Specification patterns and library internals
-
----
